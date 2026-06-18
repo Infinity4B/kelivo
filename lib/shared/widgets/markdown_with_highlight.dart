@@ -26,6 +26,8 @@ import 'ios_tactile.dart';
 import 'mermaid_bridge.dart';
 import 'export_capture_scope.dart';
 import 'mermaid_image_cache.dart';
+import 'html_fragment_parser.dart';
+import 'html_fragment_view.dart';
 import 'plantuml_block.dart';
 import 'package:path/path.dart' as p;
 import 'package:Kelivo/l10n/app_localizations.dart';
@@ -255,6 +257,40 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     }
 
     final appFontFamily = resolveAppFont();
+
+    if (settings.enableHtmlFragmentRendering) {
+      final parsed = parseHtmlFragmentSegments(
+        normalized,
+        streaming: widget.streaming,
+      );
+      if (parsed.hasHtml) {
+        final segmented = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final segment in parsed.segments)
+              if (segment.isHtml)
+                HtmlFragmentView(
+                  fragment: segment.fragment!,
+                  streaming: widget.streaming,
+                )
+              else if (segment.text.isNotEmpty)
+                MarkdownWithCodeHighlight(
+                  text: segment.text,
+                  onCitationTap: widget.onCitationTap,
+                  baseStyle: widget.baseStyle,
+                  streaming: widget.streaming,
+                ),
+          ],
+        );
+        return appFontFamily.isEmpty
+            ? segmented
+            : DefaultTextStyle.merge(
+                style: TextStyle(fontFamily: appFontFamily),
+                child: segmented,
+              );
+      }
+    }
 
     // Force rebuild of the markdown when key theme colors change to avoid stale styles
     final markdownWidget = GptMarkdown(

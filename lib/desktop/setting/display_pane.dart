@@ -95,6 +95,8 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _RowDivider(),
                   _ToggleRowAssistantMarkdown(),
                   _RowDivider(),
+                  _ToggleRowHtmlFragmentRendering(),
+                  _RowDivider(),
                   _AutoCollapseCodeBlocksSection(),
                 ],
               ),
@@ -2162,6 +2164,22 @@ class _ToggleRowAssistantMarkdown extends StatelessWidget {
       value: sp.enableAssistantMarkdown,
       onChanged: (v) =>
           context.read<SettingsProvider>().setEnableAssistantMarkdown(v),
+    );
+  }
+}
+
+class _ToggleRowHtmlFragmentRendering extends StatelessWidget {
+  const _ToggleRowHtmlFragmentRendering();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.displaySettingsPageEnableHtmlFragmentRenderingTitle,
+      value: sp.enableHtmlFragmentRendering,
+      onChanged: (v) => context
+          .read<SettingsProvider>()
+          .setEnableHtmlFragmentRendering(v),
     );
   }
 }

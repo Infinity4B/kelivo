@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:Kelivo/features/chat/pages/image_viewer_page.dart';
 import 'package:Kelivo/shared/widgets/markdown_with_highlight.dart';
 import 'package:Kelivo/shared/widgets/export_capture_scope.dart';
+import 'package:Kelivo/shared/widgets/html_fragment_view.dart';
 import 'package:Kelivo/shared/widgets/mermaid_image_cache.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/icons/lucide_adapter.dart';
@@ -364,6 +365,41 @@ Widget _settingsHarness({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'MarkdownWithCodeHighlight segments marked HTML fragments when enabled',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      await tester.pumpWidget(
+        _markdownHarness(
+          'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
+          preferences: {'display_enable_html_fragment_rendering_v1': true},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(HtmlFragmentView), findsOneWidget);
+      expect(find.textContaining('Before'), findsOneWidget);
+      expect(find.textContaining('After'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight leaves markers as markdown when disabled',
+    (tester) async {
+      await tester.pumpWidget(
+        _markdownHarness(
+          'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(HtmlFragmentView), findsNothing);
+      expect(find.textContaining('html-render-start'), findsOneWidget);
+    },
+  );
 
   test('markdown table CSV export escapes boundary cell values', () {
     final csv = markdownTableRowsToCsvForTesting([

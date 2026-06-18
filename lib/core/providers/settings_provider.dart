@@ -191,6 +191,8 @@ class SettingsProvider extends ChangeNotifier {
       'display_enable_reasoning_markdown_v1';
   static const String _displayEnableAssistantMarkdownKey =
       'display_enable_assistant_markdown_v1';
+  static const String _displayEnableHtmlFragmentRenderingKey =
+      'display_enable_html_fragment_rendering_v1';
   static const String _displayShowChatListDateKey =
       'display_show_chat_list_date_v1';
   static const String _imageCropperEnabledKey = 'image_cropper_enabled_v1';
@@ -1048,6 +1050,8 @@ class SettingsProvider extends ChangeNotifier {
         prefs.getBool(_displayEnableReasoningMarkdownKey) ?? true;
     _enableAssistantMarkdown =
         prefs.getBool(_displayEnableAssistantMarkdownKey) ?? true;
+    _enableHtmlFragmentRendering =
+        prefs.getBool(_displayEnableHtmlFragmentRenderingKey) ?? false;
     _showChatListDate = prefs.getBool(_displayShowChatListDateKey) ?? false;
     _imageCropperEnabled = prefs.getBool(_imageCropperEnabledKey) ?? false;
     _mobileCodeBlockWrap =
@@ -3843,6 +3847,17 @@ DO NOT GIVE ANSWERS OR DO HOMEWORK FOR THE USER. If the user asks a math or logi
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_displayEnableAssistantMarkdownKey, v);
+  }
+
+  // Display: render marked HTML fragments in chat messages.
+  bool _enableHtmlFragmentRendering = false;
+  bool get enableHtmlFragmentRendering => _enableHtmlFragmentRendering;
+  Future<void> setEnableHtmlFragmentRendering(bool v) async {
+    if (_enableHtmlFragmentRendering == v) return;
+    _enableHtmlFragmentRendering = v;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_displayEnableHtmlFragmentRenderingKey, v);
   }
 
   // Display: show chat list date

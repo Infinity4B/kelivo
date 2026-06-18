@@ -1921,6 +1921,16 @@ class RenderingSettingsPage extends StatelessWidget {
               _iosDivider(context),
               _iosSwitchRow(
                 context,
+                icon: Lucide.Code,
+                label: l10n.displaySettingsPageEnableHtmlFragmentRenderingTitle,
+                value: sp.enableHtmlFragmentRendering,
+                onChanged: (v) => context
+                    .read<SettingsProvider>()
+                    .setEnableHtmlFragmentRendering(v),
+              ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
                 icon: Lucide.FoldVertical,
                 label: l10n.displaySettingsPageAutoCollapseCodeBlockTitle,
                 value: sp.autoCollapseCodeBlock,
