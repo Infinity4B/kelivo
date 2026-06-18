@@ -15,7 +15,10 @@ void main() {
       expect(result.segments, hasLength(3));
       expect(result.segments[0].text, 'Before\n');
       expect(result.segments[1].fragment!.complete, isTrue);
-      expect(result.segments[1].fragment!.rawHtml, '<div class="card">Card</div>');
+      expect(
+        result.segments[1].fragment!.rawHtml,
+        '<div class="card">Card</div>',
+      );
       expect(result.segments[1].fragment!.sanitizedHtml, contains('Card'));
       expect(result.segments[2].text, '\nAfter');
     });
@@ -113,21 +116,24 @@ void main() {
       expect(sanitized, contains('{"enabled":true}'));
     });
 
-    test('strips executable scripts but keeps JSON data scripts for previews', () {
-      final sanitized = sanitizeHtmlFragment(
-        '<div>Card</div>'
-        '<script>window.ran = true;</script>'
-        '<script type="application/json" data-html-interaction-for="card">'
-        '{"enabled":true}'
-        '</script>',
-      );
+    test(
+      'strips executable scripts but keeps JSON data scripts for previews',
+      () {
+        final sanitized = sanitizeHtmlFragment(
+          '<div>Card</div>'
+          '<script>window.ran = true;</script>'
+          '<script type="application/json" data-html-interaction-for="card">'
+          '{"enabled":true}'
+          '</script>',
+        );
 
-      final stripped = stripExecutableScriptsFromHtmlFragment(sanitized);
+        final stripped = stripExecutableScriptsFromHtmlFragment(sanitized);
 
-      expect(stripped, contains('<div>Card</div>'));
-      expect(stripped, isNot(contains('window.ran')));
-      expect(stripped, contains('application/json'));
-    });
+        expect(stripped, contains('<div>Card</div>'));
+        expect(stripped, isNot(contains('window.ran')));
+        expect(stripped, contains('application/json'));
+      },
+    );
   });
 
   group('buildHtmlFragmentDocument', () {

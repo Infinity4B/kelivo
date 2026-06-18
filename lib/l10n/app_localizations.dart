@@ -4247,6 +4247,24 @@ abstract class AppLocalizations {
   /// **'Render assistant messages with Markdown'**
   String get displaySettingsPageEnableAssistantMarkdownTitle;
 
+  /// No description provided for @displaySettingsPageEnableHtmlFragmentRenderingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Render marked HTML fragments'**
+  String get displaySettingsPageEnableHtmlFragmentRenderingTitle;
+
+  /// No description provided for @htmlFragmentLinuxUnsupportedMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Inline HTML fragments are not supported on Linux.'**
+  String get htmlFragmentLinuxUnsupportedMessage;
+
+  /// No description provided for @htmlFragmentWebViewUnavailableMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Inline HTML fragment WebView is unavailable.'**
+  String get htmlFragmentWebViewUnavailableMessage;
+
   /// No description provided for @displaySettingsPageMobileCodeBlockWrapTitle.
   ///
   /// In en, this message translates to:
@@ -7495,6 +7513,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Right'**
   String get desktopDisplaySettingsTopicPositionRight;
+
+  /// No description provided for @desktopDisplaySettingsTopicTitleAutoBlurTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-blur topic titles'**
+  String get desktopDisplaySettingsTopicTitleAutoBlurTitle;
 
   /// No description provided for @displaySettingsPageNewChatOnLaunchSubtitle.
   ///

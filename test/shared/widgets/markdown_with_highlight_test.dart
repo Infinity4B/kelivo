@@ -370,19 +370,21 @@ void main() {
     'MarkdownWithCodeHighlight segments marked HTML fragments when enabled',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      try {
+        await tester.pumpWidget(
+          _markdownHarness(
+            'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
+            preferences: {'display_enable_html_fragment_rendering_v1': true},
+          ),
+        );
+        await tester.pump();
 
-      await tester.pumpWidget(
-        _markdownHarness(
-          'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
-          preferences: {'display_enable_html_fragment_rendering_v1': true},
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byType(HtmlFragmentView), findsOneWidget);
-      expect(find.textContaining('Before'), findsOneWidget);
-      expect(find.textContaining('After'), findsOneWidget);
+        expect(find.byType(HtmlFragmentView), findsOneWidget);
+        expect(find.textContaining('Before'), findsOneWidget);
+        expect(find.textContaining('After'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     },
   );
 

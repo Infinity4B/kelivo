@@ -2172,6 +2172,16 @@ class AppLocalizationsZh extends AppLocalizations {
       '助手消息 Markdown 渲染';
 
   @override
+  String get displaySettingsPageEnableHtmlFragmentRenderingTitle =>
+      '渲染标记的 HTML 片段';
+
+  @override
+  String get htmlFragmentLinuxUnsupportedMessage => 'Linux 暂不支持内嵌 HTML 片段。';
+
+  @override
+  String get htmlFragmentWebViewUnavailableMessage => '内嵌 HTML 片段 WebView 不可用。';
+
+  @override
   String get displaySettingsPageMobileCodeBlockWrapTitle => '移动端代码块自动换行';
 
   @override
@@ -3871,6 +3881,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get desktopDisplaySettingsTopicPositionRight => '右侧';
+
+  @override
+  String get desktopDisplaySettingsTopicTitleAutoBlurTitle => '自动模糊话题标题';
 
   @override
   String get displaySettingsPageNewChatOnLaunchSubtitle => '应用启动时自动创建新对话';
@@ -7490,6 +7503,16 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '助手消息 Markdown 渲染';
 
   @override
+  String get displaySettingsPageEnableHtmlFragmentRenderingTitle =>
+      '渲染标记的 HTML 片段';
+
+  @override
+  String get htmlFragmentLinuxUnsupportedMessage => 'Linux 暂不支持内嵌 HTML 片段。';
+
+  @override
+  String get htmlFragmentWebViewUnavailableMessage => '内嵌 HTML 片段 WebView 不可用。';
+
+  @override
   String get displaySettingsPageMobileCodeBlockWrapTitle => '移动端代码块自动换行';
 
   @override
@@ -9189,6 +9212,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get desktopDisplaySettingsTopicPositionRight => '右侧';
+
+  @override
+  String get desktopDisplaySettingsTopicTitleAutoBlurTitle => '自动模糊话题标题';
 
   @override
   String get displaySettingsPageNewChatOnLaunchSubtitle => '应用启动时自动创建新对话';
@@ -12807,6 +12833,16 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
       '助手訊息 Markdown 渲染';
 
   @override
+  String get displaySettingsPageEnableHtmlFragmentRenderingTitle =>
+      '渲染標記的 HTML 片段';
+
+  @override
+  String get htmlFragmentLinuxUnsupportedMessage => 'Linux 暫不支援內嵌 HTML 片段。';
+
+  @override
+  String get htmlFragmentWebViewUnavailableMessage => '內嵌 HTML 片段 WebView 不可用。';
+
+  @override
   String get displaySettingsPageMobileCodeBlockWrapTitle => '行動端程式碼區塊自動換行';
 
   @override
@@ -14505,6 +14541,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get desktopDisplaySettingsTopicPositionRight => '右側';
+
+  @override
+  String get desktopDisplaySettingsTopicTitleAutoBlurTitle => '自動模糊話題標題';
 
   @override
   String get displaySettingsPageNewChatOnLaunchSubtitle => '應用程式啟動時自動建立新對話';

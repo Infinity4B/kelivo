@@ -59,7 +59,9 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
     if (start == -1) break;
 
     if (start > cursor) {
-      segments.add(HtmlFragmentSegment.markdown(input.substring(cursor, start)));
+      segments.add(
+        HtmlFragmentSegment.markdown(input.substring(cursor, start)),
+      );
     }
 
     final contentStart = start + htmlFragmentMarkerStart.length;
@@ -120,25 +122,26 @@ String sanitizeHtmlFragment(String rawHtml) {
 
   final fragment = html_parser.parseFragment(decoded, container: 'div');
   _sanitizeChildren(fragment.nodes);
-  return fragment.nodes.map((node) => node.outerHtml).join().trim();
+  return fragment.nodes.map(_serializeHtmlNode).join().trim();
 }
 
 String decodeHtmlEntities(String input) {
   if (!input.contains('&')) return input;
-  return input.replaceAllMapped(RegExp(r'&(#x?[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);'), (
-    match,
-  ) {
-    final entity = match.group(1)!;
-    if (entity.startsWith('#x') || entity.startsWith('#X')) {
-      final value = int.tryParse(entity.substring(2), radix: 16);
-      return value == null ? match.group(0)! : String.fromCharCode(value);
-    }
-    if (entity.startsWith('#')) {
-      final value = int.tryParse(entity.substring(1));
-      return value == null ? match.group(0)! : String.fromCharCode(value);
-    }
-    return _namedEntities[entity.toLowerCase()] ?? match.group(0)!;
-  });
+  return input.replaceAllMapped(
+    RegExp(r'&(#x?[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);'),
+    (match) {
+      final entity = match.group(1)!;
+      if (entity.startsWith('#x') || entity.startsWith('#X')) {
+        final value = int.tryParse(entity.substring(2), radix: 16);
+        return value == null ? match.group(0)! : String.fromCharCode(value);
+      }
+      if (entity.startsWith('#')) {
+        final value = int.tryParse(entity.substring(1));
+        return value == null ? match.group(0)! : String.fromCharCode(value);
+      }
+      return _namedEntities[entity.toLowerCase()] ?? match.group(0)!;
+    },
+  );
 }
 
 const Map<String, String> _namedEntities = {
@@ -280,13 +283,20 @@ String stripExecutableScriptsFromHtmlFragment(String sanitizedHtml) {
       script.remove();
     }
   }
-  return fragment.nodes.map((node) => node.outerHtml).join().trim();
+  return fragment.nodes.map(_serializeHtmlNode).join().trim();
+}
+
+String _serializeHtmlNode(dom.Node node) {
+  if (node is dom.Element) return node.outerHtml;
+  if (node is dom.Text) return htmlEscape.convert(node.text);
+  return '';
 }
 
 bool _isAllowedJsonScript(dom.Element element) {
   final type = element.attributes['type']?.trim().toLowerCase();
   if (type != 'application/json') return false;
-  final interactionFor = element.attributes['data-html-interaction-for']?.trim();
+  final interactionFor = element.attributes['data-html-interaction-for']
+      ?.trim();
   if (interactionFor == null || interactionFor.isEmpty) return false;
   if (interactionFor.length > 96) return false;
   if (!RegExp(r'^[A-Za-z0-9_.:-]+$').hasMatch(interactionFor)) return false;

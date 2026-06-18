@@ -521,9 +521,8 @@ class _DesktopTopicTitleAutoBlurRow extends StatelessWidget {
     return _ToggleRow(
       label: l10n.desktopDisplaySettingsTopicTitleAutoBlurTitle,
       value: sp.desktopTopicTitleAutoBlur,
-      onChanged: (v) => context
-          .read<SettingsProvider>()
-          .setDesktopTopicTitleAutoBlur(v),
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setDesktopTopicTitleAutoBlur(v),
     );
   }
 }
@@ -2177,9 +2176,8 @@ class _ToggleRowHtmlFragmentRendering extends StatelessWidget {
     return _ToggleRow(
       label: l10n.displaySettingsPageEnableHtmlFragmentRenderingTitle,
       value: sp.enableHtmlFragmentRendering,
-      onChanged: (v) => context
-          .read<SettingsProvider>()
-          .setEnableHtmlFragmentRendering(v),
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setEnableHtmlFragmentRendering(v),
     );
   }
 }

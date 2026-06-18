@@ -2246,6 +2246,18 @@ class AppLocalizationsEn extends AppLocalizations {
       'Render assistant messages with Markdown';
 
   @override
+  String get displaySettingsPageEnableHtmlFragmentRenderingTitle =>
+      'Render marked HTML fragments';
+
+  @override
+  String get htmlFragmentLinuxUnsupportedMessage =>
+      'Inline HTML fragments are not supported on Linux.';
+
+  @override
+  String get htmlFragmentWebViewUnavailableMessage =>
+      'Inline HTML fragment WebView is unavailable.';
+
+  @override
   String get displaySettingsPageMobileCodeBlockWrapTitle =>
       'Mobile Code Block Word Wrap';
 
@@ -4034,6 +4046,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get desktopDisplaySettingsTopicPositionRight => 'Right';
+
+  @override
+  String get desktopDisplaySettingsTopicTitleAutoBlurTitle =>
+      'Auto-blur topic titles';
 
   @override
   String get displaySettingsPageNewChatOnLaunchSubtitle =>
