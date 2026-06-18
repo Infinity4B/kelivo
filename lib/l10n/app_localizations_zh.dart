@@ -1910,6 +1910,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get reasoningBudgetSheetXhigh => '极限推理';
 
   @override
+  String get reasoningBudgetSheetMax => '全力推理';
+
+  @override
   String get reasoningBudgetSheetTitle => '思维链强度';
 
   @override
@@ -2369,6 +2372,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sideDrawerReset => '重置';
 
   @override
+  String get providerAvatarChooseBuiltInIcon => '选择内置图标';
+
+  @override
+  String get providerAvatarIconDialogTitle => '选择内置图标';
+
+  @override
+  String get providerAvatarIconSearchHint => '搜索图标';
+
+  @override
+  String get providerAvatarIconNoResults => '未找到图标';
+
+  @override
+  String get providerAvatarInputLobehubIcon => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarChooseLobehubIcon => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarLobehubDialogTitle => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarLobehubDialogHint => '输入 LobeHub 图标名，如 openai';
+
+  @override
   String get sideDrawerEmojiDialogTitle => '选择表情';
 
   @override
@@ -2615,6 +2642,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get defaultModelPageTitleModelSubtitle => '用于总结对话标题的模型，推荐使用快速且便宜的模型';
+
+  @override
+  String get titleModelThinkingTitle => '是否开启思考';
 
   @override
   String get defaultModelPageSummaryModelTitle => '摘要模型';
@@ -3624,6 +3654,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutPageJoinQQGroup => '加入QQ群';
 
   @override
+  String get aboutPageQQGroupOne => 'Kelivo 一群';
+
+  @override
+  String get aboutPageQQGroupTwo => 'Kelivo 二群';
+
+  @override
   String get aboutPageJoinDiscord => '在 Discord 中加入我们';
 
   @override
@@ -3859,6 +3895,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '背景图片遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatInputBackgroundOpacityTitle => '输入框背景透明度';
 
   @override
   String get displaySettingsPageThemeSettingsTitle => '主题设置';
@@ -4544,6 +4583,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get assistantEditLocalToolAskUserSubtitle => '允许助手提出简短问题，并在你回答后继续生成。';
 
   @override
+  String get assistantEditLocalToolCalculateTitle => '计算器';
+
+  @override
+  String get assistantEditLocalToolCalculateSubtitle =>
+      '计算数学表达式，支持加减乘除幂运算 sqrt sin cos 等。';
+
+  @override
   String get assistantEditMemorySwitchTitle => '记忆';
 
   @override
@@ -4792,6 +4838,17 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String providerDetailPageDeleteSelectedModelsConfirm(int count) {
     return '确定删除选中的 $count 个模型吗？此操作不可撤回。';
+  }
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsButton => '删除不可用';
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsTooltip => '删除检测失败的模型';
+
+  @override
+  String providerDetailPageDeleteFailedDetectedModelsConfirm(int count) {
+    return '确定删除检测失败的 $count 个模型吗？此操作不可撤回。';
   }
 
   @override
@@ -7171,6 +7228,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get reasoningBudgetSheetXhigh => '极限推理';
 
   @override
+  String get reasoningBudgetSheetMax => '全力推理';
+
+  @override
   String get reasoningBudgetSheetTitle => '思维链强度';
 
   @override
@@ -7630,6 +7690,30 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get sideDrawerReset => '重置';
 
   @override
+  String get providerAvatarChooseBuiltInIcon => '选择内置图标';
+
+  @override
+  String get providerAvatarIconDialogTitle => '选择内置图标';
+
+  @override
+  String get providerAvatarIconSearchHint => '搜索图标';
+
+  @override
+  String get providerAvatarIconNoResults => '未找到图标';
+
+  @override
+  String get providerAvatarInputLobehubIcon => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarChooseLobehubIcon => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarLobehubDialogTitle => '输入 LobeHub 图标';
+
+  @override
+  String get providerAvatarLobehubDialogHint => '输入 LobeHub 图标名，如 openai';
+
+  @override
   String get sideDrawerEmojiDialogTitle => '选择表情';
 
   @override
@@ -7876,6 +7960,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageTitleModelSubtitle => '用于总结对话标题的模型，推荐使用快速且便宜的模型';
+
+  @override
+  String get titleModelThinkingTitle => '是否开启思考';
 
   @override
   String get defaultModelPageSummaryModelTitle => '摘要模型';
@@ -8885,6 +8972,12 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get aboutPageJoinQQGroup => '加入QQ群';
 
   @override
+  String get aboutPageQQGroupOne => 'Kelivo 一群';
+
+  @override
+  String get aboutPageQQGroupTwo => 'Kelivo 二群';
+
+  @override
   String get aboutPageJoinDiscord => '在 Discord 中加入我们';
 
   @override
@@ -9120,6 +9213,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '背景图片遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatInputBackgroundOpacityTitle => '输入框背景透明度';
 
   @override
   String get displaySettingsPageThemeSettingsTitle => '主题设置';
@@ -9805,6 +9901,13 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get assistantEditLocalToolAskUserSubtitle => '允许助手提出简短问题，并在你回答后继续生成。';
 
   @override
+  String get assistantEditLocalToolCalculateTitle => '计算器';
+
+  @override
+  String get assistantEditLocalToolCalculateSubtitle =>
+      '计算数学表达式，支持加减乘除幂运算 sqrt sin cos 等。';
+
+  @override
   String get assistantEditMemorySwitchTitle => '记忆';
 
   @override
@@ -10053,6 +10156,17 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   @override
   String providerDetailPageDeleteSelectedModelsConfirm(int count) {
     return '确定删除选中的 $count 个模型吗？此操作不可撤回。';
+  }
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsButton => '删除不可用';
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsTooltip => '删除检测失败的模型';
+
+  @override
+  String providerDetailPageDeleteFailedDetectedModelsConfirm(int count) {
+    return '确定删除检测失败的 $count 个模型吗？此操作不可撤回。';
   }
 
   @override
@@ -12431,6 +12545,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get reasoningBudgetSheetXhigh => '極限推理';
 
   @override
+  String get reasoningBudgetSheetMax => '全力推理';
+
+  @override
   String get reasoningBudgetSheetTitle => '思維鏈強度';
 
   @override
@@ -12890,6 +13007,30 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get sideDrawerReset => '重設';
 
   @override
+  String get providerAvatarChooseBuiltInIcon => '選擇內建圖示';
+
+  @override
+  String get providerAvatarIconDialogTitle => '選擇內建圖示';
+
+  @override
+  String get providerAvatarIconSearchHint => '搜尋圖示';
+
+  @override
+  String get providerAvatarIconNoResults => '找不到圖示';
+
+  @override
+  String get providerAvatarInputLobehubIcon => '輸入 LobeHub 圖示';
+
+  @override
+  String get providerAvatarChooseLobehubIcon => '輸入 LobeHub 圖示';
+
+  @override
+  String get providerAvatarLobehubDialogTitle => '輸入 LobeHub 圖示';
+
+  @override
+  String get providerAvatarLobehubDialogHint => '輸入 LobeHub 圖示名稱，如 openai';
+
+  @override
   String get sideDrawerEmojiDialogTitle => '選擇表情';
 
   @override
@@ -13136,6 +13277,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageTitleModelSubtitle => '用於總結對話標題的模型，推薦使用快速且便宜的模型';
+
+  @override
+  String get titleModelThinkingTitle => '是否開啟思考';
 
   @override
   String get defaultModelPageSummaryModelTitle => '摘要模型';
@@ -14144,6 +14288,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get aboutPageJoinQQGroup => '加入 QQ 群';
 
   @override
+  String get aboutPageQQGroupOne => 'Kelivo 一群';
+
+  @override
+  String get aboutPageQQGroupTwo => 'Kelivo 二群';
+
+  @override
   String get aboutPageJoinDiscord => '加入我們的 Discord';
 
   @override
@@ -14379,6 +14529,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '聊天背景遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatInputBackgroundOpacityTitle => '輸入框背景透明度';
 
   @override
   String get displaySettingsPageThemeSettingsTitle => '主題設定';
@@ -15066,6 +15219,13 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get assistantEditLocalToolAskUserSubtitle => '允許助手提出簡短問題，並在你回答後繼續生成。';
 
   @override
+  String get assistantEditLocalToolCalculateTitle => '計算機';
+
+  @override
+  String get assistantEditLocalToolCalculateSubtitle =>
+      '計算數學表達式，支援加減乘除冪運算 sqrt sin cos 等。';
+
+  @override
   String get assistantEditMemorySwitchTitle => '記憶';
 
   @override
@@ -15314,6 +15474,17 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String providerDetailPageDeleteSelectedModelsConfirm(int count) {
     return '確定刪除選中的 $count 個模型嗎？此操作不可撤回。';
+  }
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsButton => '刪除不可用';
+
+  @override
+  String get providerDetailPageDeleteFailedDetectedModelsTooltip => '刪除檢測失敗的模型';
+
+  @override
+  String providerDetailPageDeleteFailedDetectedModelsConfirm(int count) {
+    return '確定刪除檢測失敗的 $count 個模型嗎？此操作不可撤回。';
   }
 
   @override
