@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+import 'package:webview_windows/webview_windows.dart' as winweb;
 
 import 'html_fragment_parser.dart';
 
@@ -30,6 +34,8 @@ class HtmlFragmentView extends StatefulWidget {
 
 class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   WebViewController? _controller;
+  winweb.WebviewController? _windowsController;
+  StreamSubscription<dynamic>? _windowsMessageSubscription;
   Object? _platformError;
   double _height = 160;
   String? _loadedDocument;
@@ -37,7 +43,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _ensureLoaded();
+    unawaited(_ensureLoaded());
   }
 
   @override
@@ -46,11 +52,11 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (oldWidget.fragment.sanitizedHtml != widget.fragment.sanitizedHtml ||
         oldWidget.fragment.complete != widget.fragment.complete ||
         oldWidget.streaming != widget.streaming) {
-      _ensureLoaded(force: true);
+      unawaited(_ensureLoaded(force: true));
     }
   }
 
-  void _ensureLoaded({bool force = false}) {
+  Future<void> _ensureLoaded({bool force = false}) async {
     if (defaultTargetPlatform == TargetPlatform.linux) return;
 
     final document = buildHtmlFragmentDocument(
@@ -60,17 +66,92 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     );
     if (!force && _loadedDocument == document) return;
 
-    final controller = _controller ?? _createController();
-    if (controller == null) return;
-    _loadedDocument = document;
-    unawaited(controller.loadHtmlString(document));
+    if (Platform.isWindows) {
+      await _loadWindowsDocument(document);
+      return;
+    }
+
+    try {
+      final controller = _controller ?? _createController();
+      if (controller == null) return;
+      await controller.loadHtmlString(document);
+      _loadedDocument = document;
+      if (_platformError != null && mounted) {
+        setState(() => _platformError = null);
+      }
+    } catch (error, stack) {
+      _setPlatformError(
+        error,
+        stack,
+        ErrorDescription('while loading inline HTML'),
+      );
+    }
+  }
+
+  Future<void> _loadWindowsDocument(String document) async {
+    try {
+      final controller = await _ensureWindowsController();
+      if (controller == null) return;
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/kelivo_html_fragment_${widget.fragment.index}.html',
+      );
+      await file.writeAsString(document, flush: true);
+      _loadedDocument = document;
+      await controller.loadUrl(file.uri.toString());
+    } catch (error, stack) {
+      _platformError = error;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kelivo HTML fragment renderer',
+          context: ErrorDescription('while loading inline HTML on Windows'),
+        ),
+      );
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<winweb.WebviewController?> _ensureWindowsController() async {
+    final existing = _windowsController;
+    if (existing != null) return existing;
+
+    try {
+      final controller = winweb.WebviewController();
+      await controller.initialize();
+      try {
+        await controller.setBackgroundColor(const Color(0x00000000));
+      } catch (_) {}
+      _windowsMessageSubscription = controller.webMessage.listen((event) {
+        final dynamic message = event;
+        final text = message is String
+            ? message
+            : (message.content?.toString() ?? message.toString());
+        _onHostMessageText(text);
+      });
+      _windowsController = controller;
+      if (mounted) setState(() {});
+      return controller;
+    } catch (error, stack) {
+      _platformError = error;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kelivo HTML fragment renderer',
+          context: ErrorDescription('while creating a Windows inline WebView'),
+        ),
+      );
+      if (mounted) setState(() {});
+      return null;
+    }
   }
 
   WebViewController? _createController() {
     try {
-      final controller = WebViewController()
+      final controller = _newWebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(Colors.transparent)
         ..addJavaScriptChannel(
           'HtmlFragmentHost',
           onMessageReceived: _onHostMessage,
@@ -91,25 +172,83 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             },
           ),
         );
+      _trySetTransparentBackground(controller);
       _controller = controller;
       return controller;
     } catch (error, stack) {
-      _platformError = error;
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'Kelivo HTML fragment renderer',
-          context: ErrorDescription('while creating an inline WebView'),
-        ),
+      _setPlatformError(
+        error,
+        stack,
+        ErrorDescription('while creating an inline WebView'),
       );
       return null;
     }
   }
 
+  WebViewController _newWebViewController() {
+    if (Platform.isMacOS || Platform.isIOS) {
+      return WebViewController.fromPlatformCreationParams(
+        WebKitWebViewControllerCreationParams(
+          allowsInlineMediaPlayback: true,
+          mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+        ),
+      );
+    }
+    return WebViewController();
+  }
+
+  void _trySetTransparentBackground(WebViewController controller) {
+    try {
+      controller.setBackgroundColor(Colors.transparent);
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kelivo HTML fragment renderer',
+          context: ErrorDescription('while setting WebView background color'),
+        ),
+      );
+    }
+  }
+
+  void _setPlatformError(
+    Object error,
+    StackTrace stack,
+    DiagnosticsNode context,
+  ) {
+    _platformError = error;
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'Kelivo HTML fragment renderer',
+        context: context,
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  String _fallbackMessage(AppLocalizations l10n, bool unsupported) {
+    if (unsupported) return l10n.htmlFragmentLinuxUnsupportedMessage;
+    final error = _platformError;
+    if (error == null) return l10n.htmlFragmentWebViewUnavailableMessage;
+    return '${l10n.htmlFragmentWebViewUnavailableMessage}\n${_compactError(error)}';
+  }
+
+  String _compactError(Object error) {
+    final text = error.toString().trim();
+    if (text.length <= 240) return text;
+    return '${text.substring(0, 240)}...';
+  }
+
   NavigationDecision _handleNavigationRequest(NavigationRequest request) {
     final url = request.url;
-    if (url == 'about:blank' || url.startsWith('about:')) {
+    if (url == 'about:blank' ||
+        url.startsWith('about:') ||
+        url.startsWith('data:') ||
+        url.startsWith('blob:') ||
+        url.startsWith('file:')) {
       return NavigationDecision.navigate;
     }
     final uri = Uri.tryParse(url);
@@ -135,8 +274,12 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   }
 
   void _onHostMessage(JavaScriptMessage message) {
+    _onHostMessageText(message.message);
+  }
+
+  void _onHostMessageText(String message) {
     try {
-      final data = jsonDecode(message.message) as Map<String, dynamic>;
+      final data = jsonDecode(message) as Map<String, dynamic>;
       switch (data['type']) {
         case 'height':
           final value = (data['value'] as num?)?.toDouble();
@@ -178,6 +321,14 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   }
 
   @override
+  void dispose() {
+    unawaited(_windowsMessageSubscription?.cancel());
+    _windowsMessageSubscription = null;
+    _windowsController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
@@ -185,6 +336,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (unsupported || _platformError != null) {
       return Container(
         key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+        width: double.infinity,
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -193,9 +345,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
           color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
         ),
         child: Text(
-          unsupported
-              ? l10n.htmlFragmentLinuxUnsupportedMessage
-              : l10n.htmlFragmentWebViewUnavailableMessage,
+          _fallbackMessage(l10n, unsupported),
           style: TextStyle(color: cs.onSurfaceVariant),
         ),
       );
@@ -203,11 +353,31 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
 
     final controller = _controller;
     if (controller == null) {
+      final windowsController = _windowsController;
+      if (windowsController != null) {
+        return Container(
+          key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.55),
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: SizedBox(
+            height: _height,
+            child: winweb.Webview(windowsController),
+          ),
+        );
+      }
       return const SizedBox.shrink();
     }
 
     return Container(
       key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+      width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 6),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -255,8 +425,14 @@ String buildHtmlFragmentDocument({
     (function () {
       const host = window.HtmlFragmentHost;
       function post(type, data) {
-        if (!host || !host.postMessage) return;
-        host.postMessage(JSON.stringify(Object.assign({ type }, data || {})));
+        const payload = JSON.stringify(Object.assign({ type }, data || {}));
+        if (host && host.postMessage) {
+          host.postMessage(payload);
+          return;
+        }
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+          window.chrome.webview.postMessage(payload);
+        }
       }
       function height() {
         const root = document.getElementById('html-fragment-root');

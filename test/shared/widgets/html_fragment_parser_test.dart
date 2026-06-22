@@ -81,6 +81,18 @@ void main() {
       expect(sanitized, isNot(contains('iframe')));
     });
 
+    test('unwraps full HTML documents while keeping body content', () {
+      final sanitized = sanitizeHtmlFragment(
+        '<!doctype html><html><head><style>.bad{}</style></head>'
+        '<body><div>Card</div></body></html>',
+      );
+
+      expect(sanitized, contains('<div>Card</div>'));
+      expect(sanitized, isNot(contains('<html')));
+      expect(sanitized, isNot(contains('<body')));
+      expect(sanitized, isNot(contains('<style')));
+    });
+
     test('removes event handlers, srcdoc, and unsafe URLs', () {
       final sanitized = sanitizeHtmlFragment(
         '<a href="javascript:alert(1)" onclick="alert(1)">Link</a>'

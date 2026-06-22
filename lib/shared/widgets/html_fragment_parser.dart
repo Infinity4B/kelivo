@@ -232,11 +232,9 @@ const Set<String> _allowedTags = {
 
 const Set<String> _forbiddenTags = {
   'base',
-  'body',
   'embed',
   'form',
   'head',
-  'html',
   'iframe',
   'link',
   'meta',
@@ -262,6 +260,11 @@ void _sanitizeChildren(List<dom.Node> nodes) {
 void _sanitizeElement(dom.Element element) {
   final tag = element.localName?.toLowerCase() ?? '';
 
+  if (tag == 'html' || tag == 'body') {
+    _unwrapContainerElement(element);
+    return;
+  }
+
   if (_forbiddenTags.contains(tag) || !_allowedTags.contains(tag)) {
     element.remove();
     return;
@@ -282,6 +285,21 @@ void _sanitizeElement(dom.Element element) {
 
   _sanitizeAttributes(element);
   _sanitizeChildren(element.nodes);
+}
+
+void _unwrapContainerElement(dom.Element element) {
+  final parent = element.parent;
+  if (parent == null) {
+    _sanitizeChildren(element.nodes);
+    return;
+  }
+
+  final children = List<dom.Node>.from(element.nodes);
+  for (final child in children) {
+    parent.insertBefore(child, element);
+  }
+  element.remove();
+  _sanitizeChildren(children);
 }
 
 bool _isAllowedExecutableScript(dom.Element element) {
