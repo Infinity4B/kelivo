@@ -59,6 +59,30 @@ void main() {
       expect(result.segments[1].fragment!.sanitizedHtml, contains('Draft'));
     });
 
+    test('keeps simple inline handlers only for complete fragments', () {
+      final complete = parseHtmlFragmentSegments(
+        '$htmlFragmentMarkerStart'
+        '<button onclick="this.textContent=\'Done\'">Tap</button>'
+        '$htmlFragmentMarkerEnd',
+      );
+      final streaming = parseHtmlFragmentSegments(
+        '$htmlFragmentMarkerStart'
+        '<button onclick="this.textContent=\'Done\'">Tap</button>',
+        streaming: true,
+      );
+
+      expect(complete.segments.single.fragment!.complete, isTrue);
+      expect(
+        complete.segments.single.fragment!.sanitizedHtml,
+        contains('onclick'),
+      );
+      expect(streaming.segments.single.fragment!.complete, isFalse);
+      expect(
+        streaming.segments.single.fragment!.sanitizedHtml,
+        isNot(contains('onclick')),
+      );
+    });
+
     test('stops parsing after the configured fragment limit', () {
       final result = parseHtmlFragmentSegments(
         '$htmlFragmentMarkerStart<div>One</div>$htmlFragmentMarkerEnd'
@@ -105,6 +129,20 @@ void main() {
       expect(sanitized, isNot(contains('data:text/html')));
     });
 
+    test('can keep event handlers while still filtering unsafe URLs', () {
+      final sanitized = sanitizeHtmlFragment(
+        '<button onclick="this.textContent=\'Done\'">Tap</button>'
+        '<a href="javascript:alert(1)" onmouseover="this.textContent=\'x\'">Link</a>'
+        '<div srcdoc="<p>x</p>">Bad</div>',
+        allowEventHandlers: true,
+      );
+
+      expect(sanitized, contains('onclick'));
+      expect(sanitized, contains('onmouseover'));
+      expect(sanitized, isNot(contains('javascript:')));
+      expect(sanitized, isNot(contains('srcdoc')));
+    });
+
     test('removes unsafe style rules while keeping simple declarations', () {
       final sanitized = sanitizeHtmlFragment(
         '<div style="color:red; background:url(javascript:alert(1)); width:10px">'
@@ -147,16 +185,19 @@ void main() {
       () {
         final sanitized = sanitizeHtmlFragment(
           '<div>Card</div>'
+          '<button onclick="bad()">Tap</button>'
           '<script>window.ran = true;</script>'
           '<script type="application/json" data-html-interaction-for="card">'
           '{"enabled":true}'
           '</script>',
+          allowEventHandlers: true,
         );
 
         final stripped = stripExecutableScriptsFromHtmlFragment(sanitized);
 
         expect(stripped, contains('<div>Card</div>'));
         expect(stripped, isNot(contains('window.ran')));
+        expect(stripped, isNot(contains('onclick')));
         expect(stripped, contains('application/json'));
       },
     );
@@ -179,6 +220,7 @@ void main() {
       expect(document, contains('<div>Card</div>'));
       expect(document, isNot(contains('window.ran = true')));
       expect(document, contains('HtmlFragmentHost'));
+      expect(document, contains("post('wheel'"));
     });
 
     test('keeps executable scripts when user scripts are enabled', () {
@@ -194,6 +236,20 @@ void main() {
 
       expect(document, contains('<div>Card</div>'));
       expect(document, contains('window.ran = true'));
+    });
+
+    test('injects theme variables and contrast repair for dark mode', () {
+      final document = buildHtmlFragmentDocument(
+        sanitizedHtml: '<div style="background:white">Card</div>',
+        colorScheme: ColorScheme.dark(),
+        allowUserScripts: true,
+      );
+
+      expect(document, contains('color-scheme: dark'));
+      expect(document, contains('--kelivo-fg'));
+      expect(document, contains('--kelivo-control-bg'));
+      expect(document, contains('function fixContrast'));
+      expect(document, contains('new MutationObserver(function ()'));
     });
   });
 }

@@ -115,7 +115,10 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
         HtmlFragment(
           index: fragmentIndex,
           rawHtml: rawHtml,
-          sanitizedHtml: sanitizeHtmlFragment(rawHtml),
+          sanitizedHtml: sanitizeHtmlFragment(
+            rawHtml,
+            allowEventHandlers: true,
+          ),
           complete: true,
         ),
       ),
@@ -142,12 +145,12 @@ RegExpMatch? _findMarker(RegExp pattern, String input, int start) {
   return null;
 }
 
-String sanitizeHtmlFragment(String rawHtml) {
+String sanitizeHtmlFragment(String rawHtml, {bool allowEventHandlers = false}) {
   final decoded = decodeHtmlEntities(rawHtml).trim();
   if (decoded.isEmpty) return '';
 
   final fragment = html_parser.parseFragment(decoded, container: 'div');
-  _sanitizeChildren(fragment.nodes);
+  _sanitizeChildren(fragment.nodes, allowEventHandlers: allowEventHandlers);
   return fragment.nodes.map(_serializeHtmlNode).join().trim();
 }
 
@@ -250,18 +253,21 @@ const Set<String> _urlAttributes = {
   'xlink:href',
 };
 
-void _sanitizeChildren(List<dom.Node> nodes) {
+void _sanitizeChildren(
+  List<dom.Node> nodes, {
+  required bool allowEventHandlers,
+}) {
   for (final node in List<dom.Node>.from(nodes)) {
     if (node is! dom.Element) continue;
-    _sanitizeElement(node);
+    _sanitizeElement(node, allowEventHandlers: allowEventHandlers);
   }
 }
 
-void _sanitizeElement(dom.Element element) {
+void _sanitizeElement(dom.Element element, {required bool allowEventHandlers}) {
   final tag = element.localName?.toLowerCase() ?? '';
 
   if (tag == 'html' || tag == 'body') {
-    _unwrapContainerElement(element);
+    _unwrapContainerElement(element, allowEventHandlers: allowEventHandlers);
     return;
   }
 
@@ -283,14 +289,17 @@ void _sanitizeElement(dom.Element element) {
     return;
   }
 
-  _sanitizeAttributes(element);
-  _sanitizeChildren(element.nodes);
+  _sanitizeAttributes(element, allowEventHandlers: allowEventHandlers);
+  _sanitizeChildren(element.nodes, allowEventHandlers: allowEventHandlers);
 }
 
-void _unwrapContainerElement(dom.Element element) {
+void _unwrapContainerElement(
+  dom.Element element, {
+  required bool allowEventHandlers,
+}) {
   final parent = element.parent;
   if (parent == null) {
-    _sanitizeChildren(element.nodes);
+    _sanitizeChildren(element.nodes, allowEventHandlers: allowEventHandlers);
     return;
   }
 
@@ -299,7 +308,7 @@ void _unwrapContainerElement(dom.Element element) {
     parent.insertBefore(child, element);
   }
   element.remove();
-  _sanitizeChildren(children);
+  _sanitizeChildren(children, allowEventHandlers: allowEventHandlers);
 }
 
 bool _isAllowedExecutableScript(dom.Element element) {
@@ -320,13 +329,13 @@ void _sanitizeExecutableScriptAttributes(dom.Element element) {
 }
 
 String stripExecutableScriptsFromHtmlFragment(String sanitizedHtml) {
-  if (!sanitizedHtml.toLowerCase().contains('<script')) return sanitizedHtml;
   final fragment = html_parser.parseFragment(sanitizedHtml, container: 'div');
   for (final script in fragment.querySelectorAll('script')) {
     if (!_isAllowedJsonScript(script)) {
       script.remove();
     }
   }
+  _sanitizeChildren(fragment.nodes, allowEventHandlers: false);
   return fragment.nodes.map(_serializeHtmlNode).join().trim();
 }
 
@@ -364,13 +373,16 @@ void _sanitizeJsonScriptAttributes(dom.Element element) {
   }
 }
 
-void _sanitizeAttributes(dom.Element element) {
+void _sanitizeAttributes(
+  dom.Element element, {
+  required bool allowEventHandlers,
+}) {
   final attrs = Map<String, String>.from(element.attributes);
   for (final entry in attrs.entries) {
     final name = entry.key.toLowerCase();
     final value = decodeHtmlEntities(entry.value).trim();
 
-    if (name.startsWith('on') || name == 'srcdoc') {
+    if ((name.startsWith('on') && !allowEventHandlers) || name == 'srcdoc') {
       element.attributes.remove(entry.key);
       continue;
     }

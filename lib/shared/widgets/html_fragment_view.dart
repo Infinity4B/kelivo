@@ -33,17 +33,18 @@ class HtmlFragmentView extends StatefulWidget {
 }
 
 class _HtmlFragmentViewState extends State<HtmlFragmentView> {
-  static const Duration _streamingLoadDebounce = Duration(milliseconds: 120);
+  static const Duration _streamingLoadInterval = Duration(milliseconds: 80);
 
   WebViewController? _controller;
   winweb.WebviewController? _windowsController;
   StreamSubscription<dynamic>? _windowsMessageSubscription;
-  Timer? _loadDebounce;
+  Timer? _streamingLoadTimer;
   Object? _platformError;
   late double _height;
   String? _loadedDocument;
   bool _loadScheduled = false;
   bool _scheduledLoadForce = false;
+  DateTime? _lastStreamingLoadAt;
 
   @override
   void initState() {
@@ -69,14 +70,12 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
 
   void _scheduleLoad({bool force = false}) {
     if (widget.streaming) {
-      _loadDebounce?.cancel();
-      _loadDebounce = Timer(_streamingLoadDebounce, () {
-        if (!mounted) return;
-        unawaited(_ensureLoaded(force: force));
-      });
+      _scheduleStreamingLoad(force: force);
       return;
     }
 
+    _streamingLoadTimer?.cancel();
+    _streamingLoadTimer = null;
     _scheduledLoadForce = _scheduledLoadForce || force;
     if (_loadScheduled) return;
     _loadScheduled = true;
@@ -85,6 +84,47 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       final shouldForce = _scheduledLoadForce;
       _loadScheduled = false;
       _scheduledLoadForce = false;
+      unawaited(_ensureLoaded(force: shouldForce));
+    });
+  }
+
+  void _scheduleStreamingLoad({bool force = false}) {
+    _scheduledLoadForce = _scheduledLoadForce || force;
+    final now = DateTime.now();
+    final lastLoadAt = _lastStreamingLoadAt;
+    final elapsed = lastLoadAt == null ? null : now.difference(lastLoadAt);
+    final shouldLoadNow =
+        _loadedDocument == null ||
+        lastLoadAt == null ||
+        elapsed! >= _streamingLoadInterval ||
+        (force && widget.fragment.complete);
+
+    if (shouldLoadNow) {
+      _streamingLoadTimer?.cancel();
+      _streamingLoadTimer = null;
+      _queuePostFrameLoad(markStreamingLoad: true);
+      return;
+    }
+
+    if (_streamingLoadTimer?.isActive ?? false) return;
+    final delay = _streamingLoadInterval - elapsed;
+    _streamingLoadTimer = Timer(delay, () {
+      if (!mounted) return;
+      _queuePostFrameLoad(markStreamingLoad: true);
+    });
+  }
+
+  void _queuePostFrameLoad({bool markStreamingLoad = false}) {
+    if (_loadScheduled) return;
+    _loadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final shouldForce = _scheduledLoadForce;
+      _loadScheduled = false;
+      _scheduledLoadForce = false;
+      if (markStreamingLoad) {
+        _lastStreamingLoadAt = DateTime.now();
+      }
       unawaited(_ensureLoaded(force: shouldForce));
     });
   }
@@ -325,6 +365,9 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             }
           }
           break;
+        case 'wheel':
+          _handleWheel(data);
+          break;
         case 'console':
           FlutterError.reportError(
             FlutterErrorDetails(
@@ -354,9 +397,24 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     }
   }
 
+  void _handleWheel(Map<String, dynamic> data) {
+    final rawDeltaY = (data['deltaY'] as num?)?.toDouble();
+    if (rawDeltaY == null || rawDeltaY == 0) return;
+    final deltaMode = (data['deltaMode'] as num?)?.toInt() ?? 0;
+    final multiplier = switch (deltaMode) {
+      1 => 32.0,
+      2 => _height,
+      _ => 1.0,
+    };
+    final scrollable = Scrollable.maybeOf(context);
+    final position = scrollable?.position;
+    if (position == null || !position.hasPixels) return;
+    position.pointerScroll(rawDeltaY * multiplier);
+  }
+
   @override
   void dispose() {
-    _loadDebounce?.cancel();
+    _streamingLoadTimer?.cancel();
     unawaited(_windowsMessageSubscription?.cancel());
     _windowsMessageSubscription = null;
     _windowsController?.dispose();
@@ -442,6 +500,14 @@ String buildHtmlFragmentDocument({
   final bg = _cssColor(colorScheme.surface);
   final fg = _cssColor(colorScheme.onSurface);
   final link = _cssColor(colorScheme.primary);
+  final controlBg = _cssColor(
+    colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+  );
+  final mutedBg = _cssColor(
+    colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+  );
+  final border = _cssColor(colorScheme.outlineVariant);
+  final isDark = colorScheme.brightness == Brightness.dark;
 
   return '''<!doctype html>
 <html>
@@ -450,12 +516,33 @@ String buildHtmlFragmentDocument({
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base target="_blank">
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; background: transparent; color: $fg; }
+    :root {
+      color-scheme: ${isDark ? 'dark' : 'light'};
+      --kelivo-bg: $bg;
+      --kelivo-fg: $fg;
+      --kelivo-link: $link;
+      --kelivo-control-bg: $controlBg;
+      --kelivo-muted-bg: $mutedBg;
+      --kelivo-border: $border;
+    }
+    html, body { margin: 0; padding: 0; width: 100%; background: transparent; color: var(--kelivo-fg); }
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
-    a { color: $link; }
-    #html-fragment-root { box-sizing: border-box; display: flow-root; width: 100%; background: $bg; }
+    a { color: var(--kelivo-link); }
+    #html-fragment-root { box-sizing: border-box; display: flow-root; width: 100%; background: var(--kelivo-bg); color: var(--kelivo-fg); }
     * { box-sizing: border-box; max-width: 100%; }
     img, svg, canvas, video { max-width: 100%; }
+    button, input, select, textarea {
+      background: var(--kelivo-control-bg);
+      color: var(--kelivo-fg);
+      border: 1px solid var(--kelivo-border);
+      border-radius: 6px;
+    }
+    button { cursor: pointer; padding: 0.35em 0.7em; }
+    input, select, textarea { padding: 0.3em 0.45em; }
+    pre, code { background: var(--kelivo-muted-bg); color: var(--kelivo-fg); }
+    pre { padding: 0.75em; overflow: auto; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid var(--kelivo-border); padding: 0.35em 0.55em; }
   </style>
 </head>
 <body>
@@ -480,6 +567,60 @@ String buildHtmlFragmentDocument({
         const h = Math.max(root.scrollHeight, root.offsetHeight, rect.height);
         post('height', { value: h });
       }
+      function onWheel(event) {
+        post('wheel', {
+          deltaY: event.deltaY || 0,
+          deltaMode: event.deltaMode || 0
+        });
+        event.preventDefault();
+      }
+      function parseColor(value) {
+        if (!value || value === 'transparent') return null;
+        const match = value.match(/rgba?\\(([^)]+)\\)/i);
+        if (!match) return null;
+        const parts = match[1].split(',').map(function (part) { return parseFloat(part.trim()); });
+        if (parts.length < 3 || parts.some(function (part) { return Number.isNaN(part); })) return null;
+        const alpha = parts.length >= 4 ? parts[3] : 1;
+        if (alpha === 0) return null;
+        return { r: parts[0], g: parts[1], b: parts[2], a: alpha };
+      }
+      function luminance(color) {
+        function channel(value) {
+          value = value / 255;
+          return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+      }
+      function contrast(a, b) {
+        const la = luminance(a);
+        const lb = luminance(b);
+        const lighter = Math.max(la, lb);
+        const darker = Math.min(la, lb);
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+      function effectiveBackground(element) {
+        let current = element;
+        while (current && current !== document.documentElement) {
+          const color = parseColor(getComputedStyle(current).backgroundColor);
+          if (color) return color;
+          current = current.parentElement;
+        }
+        return parseColor('$bg') || { r: 255, g: 255, b: 255, a: 1 };
+      }
+      function fixContrast(root) {
+        if (!$isDark || !root) return;
+        const black = { r: 0, g: 0, b: 0, a: 1 };
+        const white = { r: 255, g: 255, b: 255, a: 1 };
+        const nodes = [root].concat(Array.from(root.querySelectorAll('*')));
+        nodes.forEach(function (node) {
+          const style = getComputedStyle(node);
+          const fg = parseColor(style.color);
+          if (!fg) return;
+          const bg = effectiveBackground(node);
+          if (contrast(fg, bg) >= 3.8) return;
+          node.style.color = contrast(black, bg) >= contrast(white, bg) ? '#111111' : '#ffffff';
+        });
+      }
       ['log', 'warn', 'error'].forEach(function (level) {
         const original = console[level];
         console[level] = function () {
@@ -493,10 +634,15 @@ String buildHtmlFragmentDocument({
       window.addEventListener('unhandledrejection', function (event) {
         post('error', { message: String(event.reason || 'Unhandled rejection') });
       });
+      window.addEventListener('wheel', onWheel, { passive: false });
       window.addEventListener('load', height);
       const root = document.getElementById('html-fragment-root');
       if (root) new ResizeObserver(height).observe(root);
-      new MutationObserver(height).observe(document.body, {
+      if (root) fixContrast(root);
+      new MutationObserver(function () {
+        if (root) fixContrast(root);
+        height();
+      }).observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
