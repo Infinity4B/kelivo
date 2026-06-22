@@ -1598,6 +1598,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         child: MarkdownWithCodeHighlight(
           text: visualText,
           baseStyle: TextStyle(fontSize: baseUser, height: 1.45),
+          enableHtmlFragments: false,
         ),
       );
     } else {

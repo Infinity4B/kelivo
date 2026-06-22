@@ -273,6 +273,7 @@ Widget _markdownHarness(
   ThemeData? theme,
   ThemeData? darkTheme,
   ThemeMode? themeMode,
+  bool enableHtmlFragments = true,
 }) {
   SharedPreferences.setMockInitialValues(preferences ?? {});
   return ChangeNotifierProvider(
@@ -289,6 +290,7 @@ Widget _markdownHarness(
                 text: text,
                 streaming: streaming,
                 onCitationTap: onCitationTap,
+                enableHtmlFragments: enableHtmlFragments,
               )
             : Align(
                 alignment: Alignment.topLeft,
@@ -298,6 +300,7 @@ Widget _markdownHarness(
                     text: text,
                     streaming: streaming,
                     onCitationTap: onCitationTap,
+                    enableHtmlFragments: enableHtmlFragments,
                   ),
                 ),
               ),
@@ -416,6 +419,23 @@ void main() {
       await tester.pumpWidget(
         _markdownHarness(
           'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(HtmlFragmentView), findsNothing);
+      expect(find.textContaining('html-render-start'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight lets callers opt out of HTML fragments',
+    (tester) async {
+      await tester.pumpWidget(
+        _markdownHarness(
+          'Before\n<!-- html-render-start --><div>Card</div><!-- html-render-end -->\nAfter',
+          preferences: {'display_enable_html_fragment_rendering_v1': true},
+          enableHtmlFragments: false,
         ),
       );
       await tester.pump();

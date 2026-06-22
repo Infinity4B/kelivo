@@ -33,17 +33,28 @@ class HtmlFragmentView extends StatefulWidget {
 }
 
 class _HtmlFragmentViewState extends State<HtmlFragmentView> {
+  static const Duration _streamingLoadDebounce = Duration(milliseconds: 120);
+
   WebViewController? _controller;
   winweb.WebviewController? _windowsController;
   StreamSubscription<dynamic>? _windowsMessageSubscription;
+  Timer? _loadDebounce;
   Object? _platformError;
-  double _height = 160;
+  late double _height;
   String? _loadedDocument;
+  bool _loadScheduled = false;
+  bool _scheduledLoadForce = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _height = widget.minHeight;
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    unawaited(_ensureLoaded());
+    _scheduleLoad();
   }
 
   @override
@@ -52,8 +63,30 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (oldWidget.fragment.sanitizedHtml != widget.fragment.sanitizedHtml ||
         oldWidget.fragment.complete != widget.fragment.complete ||
         oldWidget.streaming != widget.streaming) {
-      unawaited(_ensureLoaded(force: true));
+      _scheduleLoad(force: true);
     }
+  }
+
+  void _scheduleLoad({bool force = false}) {
+    if (widget.streaming) {
+      _loadDebounce?.cancel();
+      _loadDebounce = Timer(_streamingLoadDebounce, () {
+        if (!mounted) return;
+        unawaited(_ensureLoaded(force: force));
+      });
+      return;
+    }
+
+    _scheduledLoadForce = _scheduledLoadForce || force;
+    if (_loadScheduled) return;
+    _loadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final shouldForce = _scheduledLoadForce;
+      _loadScheduled = false;
+      _scheduledLoadForce = false;
+      unawaited(_ensureLoaded(force: shouldForce));
+    });
   }
 
   Future<void> _ensureLoaded({bool force = false}) async {
@@ -76,7 +109,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       if (controller == null) return;
       await controller.loadHtmlString(document);
       _loadedDocument = document;
-      if (_platformError != null && mounted) {
+      if (mounted) {
         setState(() => _platformError = null);
       }
     } catch (error, stack) {
@@ -284,11 +317,12 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
         case 'height':
           final value = (data['value'] as num?)?.toDouble();
           if (value != null && mounted) {
-            setState(() {
-              _height = value
-                  .clamp(widget.minHeight, widget.maxHeight)
-                  .toDouble();
-            });
+            final nextHeight = value
+                .clamp(widget.minHeight, widget.maxHeight)
+                .toDouble();
+            if ((nextHeight - _height).abs() >= 0.5) {
+              setState(() => _height = nextHeight);
+            }
           }
           break;
         case 'console':
@@ -322,6 +356,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
 
   @override
   void dispose() {
+    _loadDebounce?.cancel();
     unawaited(_windowsMessageSubscription?.cancel());
     _windowsMessageSubscription = null;
     _windowsController?.dispose();
@@ -366,13 +401,15 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             ),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: SizedBox(
-            height: _height,
-            child: winweb.Webview(windowsController),
+          child: RepaintBoundary(
+            child: SizedBox(
+              height: _height,
+              child: winweb.Webview(windowsController),
+            ),
           ),
         );
       }
-      return const SizedBox.shrink();
+      return SizedBox(height: widget.minHeight);
     }
 
     return Container(
@@ -384,9 +421,11 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: SizedBox(
-        height: _height,
-        child: WebViewWidget(controller: controller),
+      child: RepaintBoundary(
+        child: SizedBox(
+          height: _height,
+          child: WebViewWidget(controller: controller),
+        ),
       ),
     );
   }
@@ -411,10 +450,10 @@ String buildHtmlFragmentDocument({
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base target="_blank">
   <style>
-    html, body { margin: 0; padding: 0; background: transparent; color: $fg; }
+    html, body { margin: 0; padding: 0; width: 100%; background: transparent; color: $fg; }
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
     a { color: $link; }
-    #html-fragment-root { box-sizing: border-box; width: 100%; background: $bg; }
+    #html-fragment-root { box-sizing: border-box; display: flow-root; width: 100%; background: $bg; }
     * { box-sizing: border-box; max-width: 100%; }
     img, svg, canvas, video { max-width: 100%; }
   </style>
@@ -436,11 +475,9 @@ String buildHtmlFragmentDocument({
       }
       function height() {
         const root = document.getElementById('html-fragment-root');
-        const h = Math.max(
-          document.documentElement.scrollHeight,
-          document.body.scrollHeight,
-          root ? root.scrollHeight : 0
-        );
+        if (!root) return;
+        const rect = root.getBoundingClientRect();
+        const h = Math.max(root.scrollHeight, root.offsetHeight, rect.height);
         post('height', { value: h });
       }
       ['log', 'warn', 'error'].forEach(function (level) {
@@ -457,7 +494,8 @@ String buildHtmlFragmentDocument({
         post('error', { message: String(event.reason || 'Unhandled rejection') });
       });
       window.addEventListener('load', height);
-      new ResizeObserver(height).observe(document.documentElement);
+      const root = document.getElementById('html-fragment-root');
+      if (root) new ResizeObserver(height).observe(root);
       new MutationObserver(height).observe(document.body, {
         childList: true,
         subtree: true,

@@ -53,12 +53,14 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
     this.onCitationTap,
     this.baseStyle,
     this.streaming = false,
+    this.enableHtmlFragments = true,
   });
 
   final String text;
   final void Function(String id)? onCitationTap;
   final TextStyle? baseStyle; // optional override for base markdown text style
   final bool streaming;
+  final bool enableHtmlFragments;
 
   static const int _streamingTableMaxRows = 30;
   static const int _streamingHighlightMaxLines = 300;
@@ -258,7 +260,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
 
     final appFontFamily = resolveAppFont();
 
-    if (settings.enableHtmlFragmentRendering) {
+    if (settings.enableHtmlFragmentRendering && widget.enableHtmlFragments) {
       final parsed = parseHtmlFragmentSegments(
         sanitizedText,
         streaming: widget.streaming,
@@ -280,6 +282,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
                   onCitationTap: widget.onCitationTap,
                   baseStyle: widget.baseStyle,
                   streaming: widget.streaming,
+                  enableHtmlFragments: widget.enableHtmlFragments,
                 ),
           ],
         );
