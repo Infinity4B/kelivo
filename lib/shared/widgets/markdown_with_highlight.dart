@@ -260,7 +260,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
 
     if (settings.enableHtmlFragmentRendering) {
       final parsed = parseHtmlFragmentSegments(
-        normalized,
+        sanitizedText,
         streaming: widget.streaming,
       );
       if (parsed.hasHtml) {

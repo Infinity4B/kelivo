@@ -389,6 +389,28 @@ void main() {
   );
 
   testWidgets(
+    'MarkdownWithCodeHighlight segments escaped HTML fragment markers',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        await tester.pumpWidget(
+          _markdownHarness(
+            'Before\n&lt;!-- html-render-start --&gt;<div>Card</div>&lt;!-- html-render-end --&gt;\nAfter',
+            preferences: {'display_enable_html_fragment_rendering_v1': true},
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byType(HtmlFragmentView), findsOneWidget);
+        expect(find.textContaining('Before'), findsOneWidget);
+        expect(find.textContaining('After'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
+
+  testWidgets(
     'MarkdownWithCodeHighlight leaves markers as markdown when disabled',
     (tester) async {
       await tester.pumpWidget(

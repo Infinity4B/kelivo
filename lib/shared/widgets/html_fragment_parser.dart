@@ -7,6 +7,15 @@ const String htmlFragmentMarkerStart = '<!-- html-render-start -->';
 const String htmlFragmentMarkerEnd = '<!-- html-render-end -->';
 const int htmlFragmentMaxProcessCount = 30;
 
+final RegExp _htmlFragmentMarkerStartPattern = RegExp(
+  r'<!--\s*html-render-start\s*-->|&lt;!--\s*html-render-start\s*--&gt;',
+  caseSensitive: false,
+);
+final RegExp _htmlFragmentMarkerEndPattern = RegExp(
+  r'<!--\s*html-render-end\s*-->|&lt;!--\s*html-render-end\s*--&gt;',
+  caseSensitive: false,
+);
+
 class HtmlFragmentParseResult {
   const HtmlFragmentParseResult(this.segments);
 
@@ -46,7 +55,7 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
   bool streaming = false,
   int maxFragments = htmlFragmentMaxProcessCount,
 }) {
-  if (!input.contains(htmlFragmentMarkerStart)) {
+  if (!_htmlFragmentMarkerStartPattern.hasMatch(input)) {
     return HtmlFragmentParseResult([HtmlFragmentSegment.markdown(input)]);
   }
 
@@ -55,8 +64,13 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
   var fragmentIndex = 0;
 
   while (fragmentIndex < maxFragments) {
-    final start = input.indexOf(htmlFragmentMarkerStart, cursor);
-    if (start == -1) break;
+    final startMatch = _findMarker(
+      _htmlFragmentMarkerStartPattern,
+      input,
+      cursor,
+    );
+    if (startMatch == null) break;
+    final start = startMatch.start;
 
     if (start > cursor) {
       segments.add(
@@ -64,10 +78,14 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
       );
     }
 
-    final contentStart = start + htmlFragmentMarkerStart.length;
-    final end = input.indexOf(htmlFragmentMarkerEnd, contentStart);
+    final contentStart = startMatch.end;
+    final endMatch = _findMarker(
+      _htmlFragmentMarkerEndPattern,
+      input,
+      contentStart,
+    );
 
-    if (end == -1) {
+    if (endMatch == null) {
       if (!streaming) {
         segments.add(HtmlFragmentSegment.markdown(input.substring(start)));
         cursor = input.length;
@@ -90,6 +108,7 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
       break;
     }
 
+    final end = endMatch.start;
     final rawHtml = input.substring(contentStart, end).trim();
     segments.add(
       HtmlFragmentSegment.html(
@@ -102,7 +121,7 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
       ),
     );
     fragmentIndex++;
-    cursor = end + htmlFragmentMarkerEnd.length;
+    cursor = endMatch.end;
   }
 
   if (cursor < input.length) {
@@ -114,6 +133,13 @@ HtmlFragmentParseResult parseHtmlFragmentSegments(
   }
 
   return HtmlFragmentParseResult(_mergeAdjacentMarkdownSegments(segments));
+}
+
+RegExpMatch? _findMarker(RegExp pattern, String input, int start) {
+  for (final match in pattern.allMatches(input, start)) {
+    return match;
+  }
+  return null;
 }
 
 String sanitizeHtmlFragment(String rawHtml) {

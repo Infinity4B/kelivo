@@ -23,6 +23,20 @@ void main() {
       expect(result.segments[2].text, '\nAfter');
     });
 
+    test('splits fragments wrapped by escaped HTML comment markers', () {
+      final result = parseHtmlFragmentSegments(
+        'Before\n&lt;!-- html-render-start --&gt;<div>Card</div>'
+        '&lt;!-- html-render-end --&gt;\nAfter',
+      );
+
+      expect(result.hasHtml, isTrue);
+      expect(result.segments, hasLength(3));
+      expect(result.segments[0].text, 'Before\n');
+      expect(result.segments[1].fragment!.complete, isTrue);
+      expect(result.segments[1].fragment!.sanitizedHtml, '<div>Card</div>');
+      expect(result.segments[2].text, '\nAfter');
+    });
+
     test('keeps an unmatched marker as markdown when not streaming', () {
       final result = parseHtmlFragmentSegments(
         'Before\n$htmlFragmentMarkerStart<div>Draft</div>',
