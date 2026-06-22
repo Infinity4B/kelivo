@@ -41,6 +41,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   Timer? _streamingLoadTimer;
   Object? _platformError;
   late double _height;
+  double? _contentWidth;
   String? _loadedDocument;
   bool _loadScheduled = false;
   bool _scheduledLoadForce = false;
@@ -365,6 +366,14 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             }
           }
           break;
+        case 'width':
+          final value = (data['value'] as num?)?.toDouble();
+          if (value != null && mounted && value.isFinite && value > 0) {
+            if (_contentWidth == null || (value - _contentWidth!).abs() >= 1) {
+              setState(() => _contentWidth = value);
+            }
+          }
+          break;
         case 'wheel':
           _handleWheel(data);
           break;
@@ -448,43 +457,53 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (controller == null) {
       final windowsController = _windowsController;
       if (windowsController != null) {
-        return Container(
-          key: ValueKey('html-fragment-view-${widget.fragment.index}'),
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.55),
-            ),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: RepaintBoundary(
-            child: SizedBox(
-              height: _height,
-              child: winweb.Webview(windowsController),
-            ),
-          ),
+        return _buildWebViewFrame(
+          colorScheme: cs,
+          child: winweb.Webview(windowsController),
         );
       }
       return SizedBox(height: widget.minHeight);
     }
 
-    return Container(
-      key: ValueKey('html-fragment-view-${widget.fragment.index}'),
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: RepaintBoundary(
-        child: SizedBox(
-          height: _height,
-          child: WebViewWidget(controller: controller),
-        ),
-      ),
+    return _buildWebViewFrame(
+      colorScheme: cs,
+      child: WebViewWidget(controller: controller),
+    );
+  }
+
+  Widget _buildWebViewFrame({
+    required ColorScheme colorScheme,
+    required Widget child,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final hasFiniteMaxWidth = maxWidth.isFinite;
+        final measuredWidth = _contentWidth;
+        final width = hasFiniteMaxWidth && measuredWidth != null
+            ? measuredWidth.clamp(1.0, maxWidth).toDouble()
+            : (hasFiniteMaxWidth ? maxWidth : null);
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: width == null ? null : 1,
+          child: Container(
+            key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+            width: width,
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: RepaintBoundary(
+              child: SizedBox(height: _height, child: child),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -525,11 +544,12 @@ String buildHtmlFragmentDocument({
       --kelivo-muted-bg: $mutedBg;
       --kelivo-border: $border;
     }
-    html, body { margin: 0; padding: 0; width: 100%; background: transparent; color: var(--kelivo-fg); }
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+    html, body { margin: 0; padding: 0; background: transparent; color: var(--kelivo-fg); overflow: hidden; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: inline-block; max-width: 100vw; }
     a { color: var(--kelivo-link); }
-    #html-fragment-root { box-sizing: border-box; display: flow-root; width: 100%; background: var(--kelivo-bg); color: var(--kelivo-fg); }
-    * { box-sizing: border-box; max-width: 100%; }
+    #html-fragment-root { box-sizing: border-box; display: inline-block; max-width: 100vw; background: var(--kelivo-bg); color: var(--kelivo-fg); overflow: hidden; vertical-align: top; }
+    #html-fragment-content { box-sizing: border-box; display: inline-block; max-width: 100vw; vertical-align: top; }
+    * { box-sizing: border-box; max-width: 100%; overscroll-behavior: contain; }
     img, svg, canvas, video { max-width: 100%; }
     button, input, select, textarea {
       background: var(--kelivo-control-bg);
@@ -540,13 +560,13 @@ String buildHtmlFragmentDocument({
     button { cursor: pointer; padding: 0.35em 0.7em; }
     input, select, textarea { padding: 0.3em 0.45em; }
     pre, code { background: var(--kelivo-muted-bg); color: var(--kelivo-fg); }
-    pre { padding: 0.75em; overflow: auto; }
+    pre { padding: 0.75em; overflow: hidden; white-space: pre-wrap; }
     table { border-collapse: collapse; }
     th, td { border: 1px solid var(--kelivo-border); padding: 0.35em 0.55em; }
   </style>
 </head>
 <body>
-  <div id="html-fragment-root">$bodyHtml</div>
+  <div id="html-fragment-root"><div id="html-fragment-content">$bodyHtml</div></div>
   <script>
     (function () {
       const host = window.HtmlFragmentHost;
@@ -560,12 +580,17 @@ String buildHtmlFragmentDocument({
           window.chrome.webview.postMessage(payload);
         }
       }
-      function height() {
+      function dimensions() {
         const root = document.getElementById('html-fragment-root');
         if (!root) return;
-        const rect = root.getBoundingClientRect();
-        const h = Math.max(root.scrollHeight, root.offsetHeight, rect.height);
+        const content = document.getElementById('html-fragment-content') || root;
+        const rootRect = root.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        const h = Math.max(root.scrollHeight, root.offsetHeight, rootRect.height, content.scrollHeight, content.offsetHeight, contentRect.height);
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth || contentRect.width;
+        const w = Math.min(Math.max(content.scrollWidth, content.offsetWidth, contentRect.width), viewportWidth);
         post('height', { value: h });
+        if (w > 0) post('width', { value: Math.ceil(w) });
       }
       function onWheel(event) {
         post('wheel', {
@@ -573,6 +598,64 @@ String buildHtmlFragmentDocument({
           deltaMode: event.deltaMode || 0
         });
         event.preventDefault();
+        event.stopPropagation();
+      }
+      function findInteractionScope(root, script) {
+        const id = script.getAttribute('data-html-interaction-for');
+        if (id) {
+          const scoped = Array.from(root.querySelectorAll('[data-html-interaction-id]')).find(function (node) {
+            return node.getAttribute('data-html-interaction-id') === id;
+          });
+          if (scoped) return scoped;
+        }
+        let previous = script.previousElementSibling;
+        while (previous) {
+          if (previous.hasAttribute && previous.hasAttribute('data-html-interaction-id')) return previous;
+          previous = previous.previousElementSibling;
+        }
+        return root.querySelector('[data-html-interaction-id]') || root;
+      }
+      function interactionEntries(data) {
+        if (!data || typeof data !== 'object') return null;
+        return data.steps || data.items || data;
+      }
+      function applyInteractionStep(scope, entries, step) {
+        const item = entries && entries[step];
+        if (!item || typeof item !== 'object') return;
+        const title = scope.querySelector('[data-role="title"]');
+        const desc = scope.querySelector('[data-role="desc"]');
+        if (title && item.title != null) title.textContent = String(item.title);
+        if (desc && item.desc != null) desc.textContent = String(item.desc);
+        scope.querySelectorAll('[data-step]').forEach(function (button) {
+          const active = button.getAttribute('data-step') === step;
+          button.setAttribute('aria-pressed', active ? 'true' : 'false');
+          button.style.borderColor = active ? '#111111' : '#bbbbbb';
+          button.style.background = active ? '#111111' : '#ffffff';
+          button.style.color = active ? '#ffffff' : '#111111';
+        });
+        dimensions();
+      }
+      function hydrateJsonInteractions(root) {
+        if (!root) return;
+        root.querySelectorAll('script[type="application/json"]').forEach(function (script) {
+          let data;
+          try {
+            data = JSON.parse(script.textContent || '{}');
+          } catch (error) {
+            post('error', { message: 'Invalid interaction JSON: ' + error.message });
+            return;
+          }
+          const entries = interactionEntries(data);
+          const scope = findInteractionScope(root, script);
+          const buttons = Array.from(scope.querySelectorAll('[data-step]'));
+          if (!entries || buttons.length === 0) return;
+          buttons.forEach(function (button) {
+            button.addEventListener('click', function () {
+              const step = button.getAttribute('data-step');
+              if (step) applyInteractionStep(scope, entries, step);
+            });
+          });
+        });
       }
       function parseColor(value) {
         if (!value || value === 'transparent') return null;
@@ -634,21 +717,23 @@ String buildHtmlFragmentDocument({
       window.addEventListener('unhandledrejection', function (event) {
         post('error', { message: String(event.reason || 'Unhandled rejection') });
       });
-      window.addEventListener('wheel', onWheel, { passive: false });
-      window.addEventListener('load', height);
+      window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+      document.addEventListener('wheel', onWheel, { passive: false, capture: true });
+      window.addEventListener('load', dimensions);
       const root = document.getElementById('html-fragment-root');
-      if (root) new ResizeObserver(height).observe(root);
+      hydrateJsonInteractions(root);
+      if (root) new ResizeObserver(dimensions).observe(root);
       if (root) fixContrast(root);
       new MutationObserver(function () {
         if (root) fixContrast(root);
-        height();
+        dimensions();
       }).observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
         characterData: true
       });
-      height();
+      dimensions();
     })();
   </script>
 </body>

@@ -350,9 +350,12 @@ bool _isAllowedJsonScript(dom.Element element) {
   if (type != 'application/json') return false;
   final interactionFor = element.attributes['data-html-interaction-for']
       ?.trim();
-  if (interactionFor == null || interactionFor.isEmpty) return false;
-  if (interactionFor.length > 96) return false;
-  if (!RegExp(r'^[A-Za-z0-9_.:-]+$').hasMatch(interactionFor)) return false;
+  if (interactionFor != null && interactionFor.isNotEmpty) {
+    if (interactionFor.length > 96) return false;
+    if (!RegExp(r'^[A-Za-z0-9_.:-]+$').hasMatch(interactionFor)) {
+      return false;
+    }
+  }
 
   final jsonText = element.text.trim();
   if (jsonText.length > 200000) return false;

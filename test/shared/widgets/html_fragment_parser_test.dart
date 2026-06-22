@@ -180,6 +180,19 @@ void main() {
       expect(sanitized, contains('{"enabled":true}'));
     });
 
+    test('keeps valid JSON interaction scripts without explicit target', () {
+      final sanitized = sanitizeHtmlFragment(
+        '<div data-html-interaction-id="card">Card</div>'
+        '<script type="application/json">'
+        '{"checkpoint":{"title":"T","desc":"D"}}'
+        '</script>',
+      );
+
+      expect(sanitized, contains('data-html-interaction-id="card"'));
+      expect(sanitized, contains('type="application/json"'));
+      expect(sanitized, contains('checkpoint'));
+    });
+
     test(
       'strips executable scripts but keeps JSON data scripts for previews',
       () {
@@ -221,6 +234,9 @@ void main() {
       expect(document, isNot(contains('window.ran = true')));
       expect(document, contains('HtmlFragmentHost'));
       expect(document, contains("post('wheel'"));
+      expect(document, contains('capture: true'));
+      expect(document, contains('html-fragment-content'));
+      expect(document, contains("post('width'"));
     });
 
     test('keeps executable scripts when user scripts are enabled', () {
@@ -250,6 +266,31 @@ void main() {
       expect(document, contains('--kelivo-control-bg'));
       expect(document, contains('function fixContrast'));
       expect(document, contains('new MutationObserver(function ()'));
+    });
+
+    test('injects JSON data-step interaction hydration', () {
+      final sanitized = sanitizeHtmlFragment(
+        '<div data-html-interaction-id="demo">'
+        '<div data-role="title">Old</div>'
+        '<div data-role="desc">Old desc</div>'
+        '<button data-step="checkpoint">Checkpoint</button>'
+        '</div>'
+        '<script type="application/json">'
+        '{"checkpoint":{"title":"New","desc":"New desc"}}'
+        '</script>',
+        allowEventHandlers: true,
+      );
+
+      final document = buildHtmlFragmentDocument(
+        sanitizedHtml: sanitized,
+        colorScheme: colorScheme,
+        allowUserScripts: true,
+      );
+
+      expect(document, contains('function hydrateJsonInteractions'));
+      expect(document, contains('data-step'));
+      expect(document, contains('data-role="title"'));
+      expect(document, contains('New desc'));
     });
   });
 }
