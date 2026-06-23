@@ -41,7 +41,6 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   Timer? _streamingLoadTimer;
   Object? _platformError;
   late double _height;
-  double? _contentWidth;
   String? _loadedDocument;
   bool _loadScheduled = false;
   bool _scheduledLoadForce = false;
@@ -366,14 +365,6 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             }
           }
           break;
-        case 'width':
-          final value = (data['value'] as num?)?.toDouble();
-          if (value != null && mounted && value.isFinite && value > 0) {
-            if (_contentWidth == null || (value - _contentWidth!).abs() >= 1) {
-              setState(() => _contentWidth = value);
-            }
-          }
-          break;
         case 'wheel':
           _handleWheel(data);
           break;
@@ -457,53 +448,24 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (controller == null) {
       final windowsController = _windowsController;
       if (windowsController != null) {
-        return _buildWebViewFrame(
-          colorScheme: cs,
-          child: winweb.Webview(windowsController),
-        );
+        return _buildWebViewFrame(child: winweb.Webview(windowsController));
       }
       return SizedBox(height: widget.minHeight);
     }
 
-    return _buildWebViewFrame(
-      colorScheme: cs,
-      child: WebViewWidget(controller: controller),
-    );
+    return _buildWebViewFrame(child: WebViewWidget(controller: controller));
   }
 
-  Widget _buildWebViewFrame({
-    required ColorScheme colorScheme,
-    required Widget child,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth;
-        final hasFiniteMaxWidth = maxWidth.isFinite;
-        final measuredWidth = _contentWidth;
-        final width = hasFiniteMaxWidth && measuredWidth != null
-            ? measuredWidth.clamp(1.0, maxWidth).toDouble()
-            : (hasFiniteMaxWidth ? maxWidth : null);
-
-        return Align(
-          alignment: Alignment.centerLeft,
-          widthFactor: width == null ? null : 1,
-          child: Container(
-            key: ValueKey('html-fragment-view-${widget.fragment.index}'),
-            width: width,
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.55),
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: RepaintBoundary(
-              child: SizedBox(height: _height, child: child),
-            ),
-          ),
-        );
-      },
+  Widget _buildWebViewFrame({required Widget child}) {
+    return Container(
+      key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+      child: RepaintBoundary(
+        child: SizedBox(height: _height, child: child),
+      ),
     );
   }
 }
@@ -587,10 +549,7 @@ String buildHtmlFragmentDocument({
         const rootRect = root.getBoundingClientRect();
         const contentRect = content.getBoundingClientRect();
         const h = Math.max(root.scrollHeight, root.offsetHeight, rootRect.height, content.scrollHeight, content.offsetHeight, contentRect.height);
-        const viewportWidth = document.documentElement.clientWidth || window.innerWidth || contentRect.width;
-        const w = Math.min(Math.max(content.scrollWidth, content.offsetWidth, contentRect.width), viewportWidth);
         post('height', { value: h });
-        if (w > 0) post('width', { value: Math.ceil(w) });
       }
       function onWheel(event) {
         post('wheel', {
