@@ -234,9 +234,9 @@ void main() {
       expect(document, isNot(contains('window.ran = true')));
       expect(document, contains('HtmlFragmentHost'));
       expect(document, contains("post('wheel'"));
+      expect(document, contains("post('width'"));
       expect(document, contains('capture: true'));
       expect(document, contains('html-fragment-content'));
-      expect(document, isNot(contains("post('width'")));
     });
 
     test('keeps executable scripts when user scripts are enabled', () {

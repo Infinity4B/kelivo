@@ -34,6 +34,7 @@ class HtmlFragmentView extends StatefulWidget {
 
 class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   static const Duration _streamingLoadInterval = Duration(milliseconds: 80);
+  static const Duration _streamingScrollPause = Duration(milliseconds: 220);
 
   WebViewController? _controller;
   winweb.WebviewController? _windowsController;
@@ -41,10 +42,16 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   Timer? _streamingLoadTimer;
   Object? _platformError;
   late double _height;
+  double? _availableWidth;
+  double? _pendingAvailableWidth;
+  double? _contentWidth;
+  ScrollPosition? _scrollPosition;
   String? _loadedDocument;
   bool _loadScheduled = false;
   bool _scheduledLoadForce = false;
+  bool _availableWidthUpdateScheduled = false;
   DateTime? _lastStreamingLoadAt;
+  DateTime? _deferStreamingLoadsUntil;
 
   @override
   void initState() {
@@ -55,6 +62,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _bindScrollablePosition();
     _scheduleLoad();
   }
 
@@ -91,6 +99,16 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   void _scheduleStreamingLoad({bool force = false}) {
     _scheduledLoadForce = _scheduledLoadForce || force;
     final now = DateTime.now();
+    final deferUntil = _deferStreamingLoadsUntil;
+    if (deferUntil != null && now.isBefore(deferUntil)) {
+      _streamingLoadTimer?.cancel();
+      _streamingLoadTimer = Timer(deferUntil.difference(now), () {
+        if (!mounted) return;
+        _scheduleStreamingLoad(force: _scheduledLoadForce);
+      });
+      return;
+    }
+
     final lastLoadAt = _lastStreamingLoadAt;
     final elapsed = lastLoadAt == null ? null : now.difference(lastLoadAt);
     final shouldLoadNow =
@@ -123,6 +141,16 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       _loadScheduled = false;
       _scheduledLoadForce = false;
       if (markStreamingLoad) {
+        final now = DateTime.now();
+        final deferUntil = _deferStreamingLoadsUntil;
+        if (deferUntil != null && now.isBefore(deferUntil)) {
+          _streamingLoadTimer?.cancel();
+          _streamingLoadTimer = Timer(deferUntil.difference(now), () {
+            if (!mounted) return;
+            _scheduleStreamingLoad(force: shouldForce);
+          });
+          return;
+        }
         _lastStreamingLoadAt = DateTime.now();
       }
       unawaited(_ensureLoaded(force: shouldForce));
@@ -136,6 +164,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       sanitizedHtml: widget.fragment.sanitizedHtml,
       colorScheme: Theme.of(context).colorScheme,
       allowUserScripts: widget.fragment.complete,
+      hostWidth: _availableWidth,
     );
     if (!force && _loadedDocument == document) return;
 
@@ -365,6 +394,19 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
             }
           }
           break;
+        case 'width':
+          final value = (data['value'] as num?)?.toDouble();
+          if (value != null && value > 0 && mounted) {
+            final maxWidth = _availableWidth;
+            final nextWidth =
+                (maxWidth == null ? value : value.clamp(1, maxWidth))
+                    .toDouble();
+            final current = _contentWidth;
+            if (current == null || (nextWidth - current).abs() >= 0.5) {
+              setState(() => _contentWidth = nextWidth);
+            }
+          }
+          break;
         case 'wheel':
           _handleWheel(data);
           break;
@@ -400,21 +442,64 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   void _handleWheel(Map<String, dynamic> data) {
     final rawDeltaY = (data['deltaY'] as num?)?.toDouble();
     if (rawDeltaY == null || rawDeltaY == 0) return;
+    _pauseStreamingLoadsForScroll();
     final deltaMode = (data['deltaMode'] as num?)?.toInt() ?? 0;
     final multiplier = switch (deltaMode) {
       1 => 32.0,
       2 => _height,
       _ => 1.0,
     };
-    final scrollable = Scrollable.maybeOf(context);
-    final position = scrollable?.position;
+    final position = _scrollPosition ?? Scrollable.maybeOf(context)?.position;
     if (position == null || !position.hasPixels) return;
     position.pointerScroll(rawDeltaY * multiplier);
+  }
+
+  void _bindScrollablePosition() {
+    final position = Scrollable.maybeOf(context)?.position;
+    if (identical(position, _scrollPosition)) return;
+    _scrollPosition?.removeListener(_handleAncestorScrollOffset);
+    _scrollPosition?.isScrollingNotifier.removeListener(
+      _handleAncestorScrollActivity,
+    );
+    _scrollPosition = position;
+    position?.addListener(_handleAncestorScrollOffset);
+    position?.isScrollingNotifier.addListener(_handleAncestorScrollActivity);
+  }
+
+  void _handleAncestorScrollOffset() {
+    _pauseStreamingLoadsForScroll();
+  }
+
+  void _handleAncestorScrollActivity() {
+    if (_scrollPosition?.isScrollingNotifier.value ?? false) {
+      _pauseStreamingLoadsForScroll();
+    }
+  }
+
+  void _pauseStreamingLoadsForScroll() {
+    if (!widget.streaming) return;
+    final pauseUntil = DateTime.now().add(_streamingScrollPause);
+    final current = _deferStreamingLoadsUntil;
+    if (current == null || pauseUntil.isAfter(current)) {
+      _deferStreamingLoadsUntil = pauseUntil;
+    }
+    if (_streamingLoadTimer?.isActive ?? false) {
+      _streamingLoadTimer?.cancel();
+      _streamingLoadTimer = Timer(_streamingScrollPause, () {
+        if (!mounted) return;
+        _scheduleStreamingLoad(force: _scheduledLoadForce);
+      });
+    }
   }
 
   @override
   void dispose() {
     _streamingLoadTimer?.cancel();
+    _scrollPosition?.removeListener(_handleAncestorScrollOffset);
+    _scrollPosition?.isScrollingNotifier.removeListener(
+      _handleAncestorScrollActivity,
+    );
+    _scrollPosition = null;
     unawaited(_windowsMessageSubscription?.cancel());
     _windowsMessageSubscription = null;
     _windowsController?.dispose();
@@ -457,16 +542,64 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   }
 
   Widget _buildWebViewFrame({required Widget child}) {
-    return Container(
-      key: ValueKey('html-fragment-view-${widget.fragment.index}'),
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-      child: RepaintBoundary(
-        child: SizedBox(height: _height, child: child),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : null;
+        if (maxWidth != null && maxWidth.isFinite && maxWidth > 0) {
+          _scheduleAvailableWidthUpdate(maxWidth);
+        }
+
+        final measuredWidth = _contentWidth;
+        final frameWidth = switch ((measuredWidth, maxWidth)) {
+          (final width?, final bound?) => width.clamp(1, bound).toDouble(),
+          (final width?, null) => width,
+          (null, final bound?) => bound,
+          (null, null) => null,
+        };
+
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Container(
+            key: ValueKey('html-fragment-view-${widget.fragment.index}'),
+            width: frameWidth,
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+            child: RepaintBoundary(
+              child: SizedBox(height: _height, child: child),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  void _scheduleAvailableWidthUpdate(double width) {
+    final current = _availableWidth;
+    if (current != null && (current - width).abs() < 0.5) return;
+
+    _pendingAvailableWidth = width;
+    if (_availableWidthUpdateScheduled) return;
+    _availableWidthUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final pending = _pendingAvailableWidth;
+      _pendingAvailableWidth = null;
+      _availableWidthUpdateScheduled = false;
+      if (pending == null || pending <= 0 || !pending.isFinite) return;
+      final latest = _availableWidth;
+      if (latest != null && (latest - pending).abs() < 0.5) return;
+      setState(() {
+        _availableWidth = pending;
+        final width = _contentWidth;
+        if (width != null) {
+          _contentWidth = width.clamp(1, pending).toDouble();
+        }
+      });
+      _scheduleLoad(force: true);
+    });
   }
 }
 
@@ -474,6 +607,7 @@ String buildHtmlFragmentDocument({
   required String sanitizedHtml,
   required ColorScheme colorScheme,
   required bool allowUserScripts,
+  double? hostWidth,
 }) {
   final bodyHtml = allowUserScripts
       ? sanitizedHtml
@@ -489,6 +623,9 @@ String buildHtmlFragmentDocument({
   );
   final border = _cssColor(colorScheme.outlineVariant);
   final isDark = colorScheme.brightness == Brightness.dark;
+  final hostWidthCss = hostWidth != null && hostWidth.isFinite && hostWidth > 0
+      ? '${hostWidth.toStringAsFixed(2)}px'
+      : '100vw';
 
   return '''<!doctype html>
 <html>
@@ -505,13 +642,14 @@ String buildHtmlFragmentDocument({
       --kelivo-control-bg: $controlBg;
       --kelivo-muted-bg: $mutedBg;
       --kelivo-border: $border;
+      --kelivo-host-width: $hostWidthCss;
     }
-    html, body { margin: 0; padding: 0; background: transparent; color: var(--kelivo-fg); overflow: hidden; }
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: inline-block; max-width: 100vw; }
+    html, body { margin: 0; padding: 0; width: var(--kelivo-host-width); max-width: var(--kelivo-host-width); background: transparent; color: var(--kelivo-fg); overflow: hidden; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: block; }
     a { color: var(--kelivo-link); }
-    #html-fragment-root { box-sizing: border-box; display: inline-block; max-width: 100vw; background: var(--kelivo-bg); color: var(--kelivo-fg); overflow: hidden; vertical-align: top; }
-    #html-fragment-content { box-sizing: border-box; display: inline-block; max-width: 100vw; vertical-align: top; }
-    * { box-sizing: border-box; max-width: 100%; overscroll-behavior: contain; }
+    #html-fragment-root { box-sizing: border-box; display: inline-block; width: fit-content; max-width: var(--kelivo-host-width); background: var(--kelivo-bg); color: var(--kelivo-fg); overflow: hidden; vertical-align: top; }
+    #html-fragment-content { box-sizing: border-box; display: inline-block; width: fit-content; max-width: var(--kelivo-host-width); vertical-align: top; }
+    * { box-sizing: border-box; max-width: 100%; overscroll-behavior: none; }
     img, svg, canvas, video { max-width: 100%; }
     button, input, select, textarea {
       background: var(--kelivo-control-bg);
@@ -549,15 +687,28 @@ String buildHtmlFragmentDocument({
         const rootRect = root.getBoundingClientRect();
         const contentRect = content.getBoundingClientRect();
         const h = Math.max(root.scrollHeight, root.offsetHeight, rootRect.height, content.scrollHeight, content.offsetHeight, contentRect.height);
+        const hostWidthValue = getComputedStyle(document.documentElement).getPropertyValue('--kelivo-host-width').trim();
+        const hostWidth = hostWidthValue.endsWith('px') ? parseFloat(hostWidthValue) : (window.innerWidth || document.documentElement.clientWidth || 1);
+        const w = Math.max(1, Math.min(hostWidth, Math.ceil(Math.max(root.scrollWidth, root.offsetWidth, rootRect.width, content.scrollWidth, content.offsetWidth, contentRect.width))));
         post('height', { value: h });
+        post('width', { value: w });
+      }
+      let pendingWheelDeltaY = 0;
+      let pendingWheelFrame = 0;
+      function flushWheel() {
+        const deltaY = pendingWheelDeltaY;
+        pendingWheelDeltaY = 0;
+        pendingWheelFrame = 0;
+        if (deltaY !== 0) post('wheel', { deltaY, deltaMode: 0 });
       }
       function onWheel(event) {
-        post('wheel', {
-          deltaY: event.deltaY || 0,
-          deltaMode: event.deltaMode || 0
-        });
+        const mode = event.deltaMode || 0;
+        const unit = mode === 1 ? 32 : (mode === 2 ? window.innerHeight : 1);
+        pendingWheelDeltaY += (event.deltaY || 0) * unit;
+        if (!pendingWheelFrame) pendingWheelFrame = requestAnimationFrame(flushWheel);
         event.preventDefault();
         event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       }
       function findInteractionScope(root, script) {
         const id = script.getAttribute('data-html-interaction-for');
