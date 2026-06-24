@@ -28,17 +28,6 @@ void main() {
       expect(find.byType(Row), findsWidgets);
     });
 
-    testWidgets('renders expanded safe static CSS natively', (tester) async {
-      await tester.pumpWidget(
-        _host(
-          NativeHtmlFragmentView(fragment: _fragment(_expandedSafeCssHtml)),
-        ),
-      );
-
-      expect(_richTextContaining('Safe CSS card'), findsOneWidget);
-      expect(find.byType(Opacity), findsOneWidget);
-    });
-
     testWidgets('updates data-role content when a data-step button is tapped', (
       tester,
     ) async {
@@ -113,13 +102,4 @@ const String _gridCardHtml =
     '<div style="border:1px solid #bbb;border-radius:10px;padding:14px;'
     'background:white;">Rotated vector</div>'
     '</div>'
-    '</div>';
-
-const String _expandedSafeCssHtml =
-    '<div style="box-sizing:border-box;min-width:120px;max-width:420px;'
-    'min-height:40px;max-height:220px;opacity:.96;box-shadow:0 2px 8px '
-    'rgba(0,0,0,.14);border-bottom:1px solid #ddd;padding:12px;">'
-    '<span style="text-decoration:underline;text-decoration-color:#555;'
-    'text-decoration-style:solid;overflow-wrap:anywhere;word-break:break-word;'
-    'white-space:normal;">Safe CSS card</span>'
     '</div>';

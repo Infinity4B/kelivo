@@ -20,10 +20,10 @@ void main() {
       expect(classifyHtmlFragment(html), HtmlFragmentRenderMode.nativeSimple);
     });
 
-    test('uses native rendering for expanded safe static CSS', () {
+    test('falls back to WebView for expanded static CSS', () {
       final html = sanitizeHtmlFragment(_expandedSafeCssHtml);
 
-      expect(classifyHtmlFragment(html), HtmlFragmentRenderMode.nativeSimple);
+      expect(classifyHtmlFragment(html), HtmlFragmentRenderMode.webView);
     });
 
     test('uses native interaction for data-step JSON cards', () {

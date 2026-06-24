@@ -34,7 +34,8 @@ class HtmlFragmentView extends StatefulWidget {
   State<HtmlFragmentView> createState() => _HtmlFragmentViewState();
 }
 
-class _HtmlFragmentViewState extends State<HtmlFragmentView> {
+class _HtmlFragmentViewState extends State<HtmlFragmentView>
+    with AutomaticKeepAliveClientMixin<HtmlFragmentView> {
   static const Duration _streamingLoadInterval = Duration(milliseconds: 80);
 
   WebViewController? _controller;
@@ -72,7 +73,11 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
         oldWidget.streaming != widget.streaming) {
       if (_usesWebView) _scheduleLoad(force: true);
     }
+    updateKeepAlive();
   }
+
+  @override
+  bool get wantKeepAlive => _usesWebView;
 
   bool get _usesWebView {
     return classifyHtmlFragment(widget.fragment.sanitizedHtml) ==
@@ -447,6 +452,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final renderMode = classifyHtmlFragment(widget.fragment.sanitizedHtml);
     if (renderMode != HtmlFragmentRenderMode.webView) {
       return NativeHtmlFragmentView(
@@ -540,6 +546,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       if (pending == null || pending <= 0 || !pending.isFinite) return;
       final latest = _availableWidth;
       if (latest != null && (latest - pending).abs() < 0.5) return;
+      final hadAvailableWidth = latest != null;
       setState(() {
         _availableWidth = pending;
         final width = _contentWidth;
@@ -547,7 +554,9 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
           _contentWidth = width.clamp(1, pending).toDouble();
         }
       });
-      _scheduleLoad(force: true);
+      if (!hadAvailableWidth && _usesWebView) {
+        _scheduleLoad(force: true);
+      }
     });
   }
 }
