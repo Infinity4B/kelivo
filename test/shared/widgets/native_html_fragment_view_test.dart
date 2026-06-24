@@ -17,6 +17,28 @@ void main() {
       expect(_richTextContaining('Hello World'), findsOneWidget);
     });
 
+    testWidgets('renders static grid cards natively', (tester) async {
+      await tester.pumpWidget(
+        _host(NativeHtmlFragmentView(fragment: _fragment(_gridCardHtml))),
+      );
+
+      expect(_richTextContaining('RoPE core operation'), findsOneWidget);
+      expect(_richTextContaining('Original vector'), findsOneWidget);
+      expect(_richTextContaining('Rotated vector'), findsOneWidget);
+      expect(find.byType(Row), findsWidgets);
+    });
+
+    testWidgets('renders expanded safe static CSS natively', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          NativeHtmlFragmentView(fragment: _fragment(_expandedSafeCssHtml)),
+        ),
+      );
+
+      expect(_richTextContaining('Safe CSS card'), findsOneWidget);
+      expect(find.byType(Opacity), findsOneWidget);
+    });
+
     testWidgets('updates data-role content when a data-step button is tapped', (
       tester,
     ) async {
@@ -76,3 +98,28 @@ Finder _richTextContaining(String text) {
     return widget is RichText && widget.text.toPlainText().contains(text);
   });
 }
+
+const String _gridCardHtml =
+    '<div style="border:1px solid #d0d0d0;border-radius:12px;padding:18px;'
+    'margin:16px 0;background:#fafafa;color:#222;font-family:system-ui;">'
+    '<div style="font-size:18px;font-weight:700;margin-bottom:12px;">'
+    'RoPE core operation'
+    '</div>'
+    '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:14px;'
+    'align-items:center;">'
+    '<div style="border:1px solid #bbb;border-radius:10px;padding:14px;'
+    'background:white;">Original vector</div>'
+    '<div style="font-size:28px;color:#555;">-&gt;</div>'
+    '<div style="border:1px solid #bbb;border-radius:10px;padding:14px;'
+    'background:white;">Rotated vector</div>'
+    '</div>'
+    '</div>';
+
+const String _expandedSafeCssHtml =
+    '<div style="box-sizing:border-box;min-width:120px;max-width:420px;'
+    'min-height:40px;max-height:220px;opacity:.96;box-shadow:0 2px 8px '
+    'rgba(0,0,0,.14);border-bottom:1px solid #ddd;padding:12px;">'
+    '<span style="text-decoration:underline;text-decoration-color:#555;'
+    'text-decoration-style:solid;overflow-wrap:anywhere;word-break:break-word;'
+    'white-space:normal;">Safe CSS card</span>'
+    '</div>';

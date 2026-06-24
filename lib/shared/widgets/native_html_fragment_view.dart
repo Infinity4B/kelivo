@@ -107,8 +107,9 @@ class _NativeHtmlRenderer {
     final tag = node.localName?.toLowerCase() ?? '';
     if (tag == 'script') return null;
     if (tag == 'br') return const SizedBox(height: 8);
-    if (tag == 'ul' || tag == 'ol')
+    if (tag == 'ul' || tag == 'ol') {
       return _renderList(node, style, ordered: tag == 'ol');
+    }
     if (tag == 'table') return _renderTable(node, style);
     if (tag == 'pre') return _renderPre(node, style);
     if (tag == 'button') return _renderButton(node, style);
@@ -131,24 +132,70 @@ class _NativeHtmlRenderer {
   }
 
   List<Widget> renderChildren(dom.Element element, TextStyle style) {
-    final display = _styleMap(element)['display']?.toLowerCase();
+    final styleMap = _styleMap(element);
+    final display = styleMap['display']?.toLowerCase();
     final children = <Widget>[];
     for (final node in element.nodes) {
       final child = renderBlock(node, style);
       if (child != null) children.add(child);
     }
     if (display == 'flex') {
-      final gap = _parseCssSize(_styleMap(element)['gap']);
+      final gap = _parseCssSize(styleMap['gap']);
+      final columnGap = _parseCssSize(styleMap['column-gap']) ?? gap;
+      final rowGap = _parseCssSize(styleMap['row-gap']) ?? gap;
       return [
         Wrap(
-          spacing: gap ?? 0,
-          runSpacing: gap ?? 0,
+          spacing: columnGap ?? 0,
+          runSpacing: rowGap ?? 0,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: children,
+        ),
+      ];
+    }
+    if (display == 'grid') {
+      final gap = _parseCssSize(styleMap['gap']) ?? 0;
+      final columnGap = _parseCssSize(styleMap['column-gap']) ?? gap;
+      final rowGap = _parseCssSize(styleMap['row-gap']) ?? gap;
+      final columns = _parseGridTemplateColumns(
+        styleMap['grid-template-columns'],
+      );
+      if (columns.length == children.length && columns.isNotEmpty) {
+        return [
+          _gridRow(
+            children: children,
+            columns: columns,
+            gap: columnGap,
+            alignItems: styleMap['align-items'],
+          ),
+        ];
+      }
+      return [
+        Wrap(
+          spacing: columnGap,
+          runSpacing: rowGap,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: children,
         ),
       ];
     }
     return children;
+  }
+
+  Widget _gridRow({
+    required List<Widget> children,
+    required List<_GridColumn> columns,
+    required double gap,
+    required String? alignItems,
+  }) {
+    final rowChildren = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0 && gap > 0) rowChildren.add(SizedBox(width: gap));
+      rowChildren.add(columns[i].wrap(children[i]));
+    }
+    return Row(
+      crossAxisAlignment: _crossAxisAlignmentForAlignItems(alignItems),
+      children: rowChildren,
+    );
   }
 
   InlineSpan renderInline(dom.Node node, TextStyle style) {
@@ -161,8 +208,9 @@ class _NativeHtmlRenderer {
     final styled = _ElementStyle.from(node, context);
     final nextStyle = styled.applyTextStyle(_styleForTag(tag, style));
     final replacement = _replacementFor(node);
-    if (replacement != null)
+    if (replacement != null) {
       return TextSpan(text: replacement, style: nextStyle);
+    }
     final children = node.nodes
         .map((child) => renderInline(child, nextStyle))
         .toList();
@@ -399,13 +447,23 @@ class _ElementStyle {
     this.margin,
     this.borderRadius,
     this.border,
+    this.boxShadow,
+    this.minWidth,
     this.maxWidth,
     this.width,
+    this.minHeight,
+    this.maxHeight,
+    this.height,
+    this.opacity,
     this.fontSize,
     this.fontWeight,
     this.fontStyle,
     this.lineHeight,
     this.textAlign,
+    this.textDecoration,
+    this.textDecorationColor,
+    this.textDecorationStyle,
+    this.textDecorationThickness,
   });
 
   final Color? textColor;
@@ -414,13 +472,23 @@ class _ElementStyle {
   final EdgeInsetsGeometry? margin;
   final BorderRadius? borderRadius;
   final BoxBorder? border;
+  final List<BoxShadow>? boxShadow;
+  final double? minWidth;
   final double? maxWidth;
   final double? width;
+  final double? minHeight;
+  final double? maxHeight;
+  final double? height;
+  final double? opacity;
   final double? fontSize;
   final FontWeight? fontWeight;
   final FontStyle? fontStyle;
   final double? lineHeight;
   final TextAlign? textAlign;
+  final TextDecoration? textDecoration;
+  final Color? textDecorationColor;
+  final TextDecorationStyle? textDecorationStyle;
+  final double? textDecorationThickness;
 
   static _ElementStyle from(dom.Element element, BuildContext context) {
     final style = _styleMap(element);
@@ -436,8 +504,14 @@ class _ElementStyle {
           ? null
           : BorderRadius.circular(borderRadius),
       border: _parseBorder(style, context),
+      boxShadow: _parseBoxShadow(style['box-shadow']),
+      minWidth: _parseCssSize(style['min-width']),
       maxWidth: _parseCssSize(style['max-width']),
       width: _parseCssSize(style['width']),
+      minHeight: _parseCssSize(style['min-height']),
+      maxHeight: _parseCssSize(style['max-height']),
+      height: _parseCssSize(style['height']),
+      opacity: _parseOpacity(style['opacity']),
       fontSize: _parseCssSize(style['font-size']),
       fontWeight: _parseFontWeight(style['font-weight']),
       fontStyle: style['font-style']?.toLowerCase() == 'italic'
@@ -445,6 +519,14 @@ class _ElementStyle {
           : null,
       lineHeight: _parseLineHeight(style['line-height']),
       textAlign: _parseTextAlign(style['text-align']),
+      textDecoration: _parseTextDecoration(style),
+      textDecorationColor: _parseColor(style['text-decoration-color']),
+      textDecorationStyle: _parseTextDecorationStyle(
+        style['text-decoration-style'],
+      ),
+      textDecorationThickness: _parseCssSize(
+        style['text-decoration-thickness'],
+      ),
     );
   }
 
@@ -455,6 +537,10 @@ class _ElementStyle {
       fontWeight: fontWeight ?? style.fontWeight,
       fontStyle: fontStyle ?? style.fontStyle,
       height: lineHeight ?? style.height,
+      decoration: textDecoration ?? style.decoration,
+      decorationColor: textDecorationColor ?? style.decorationColor,
+      decorationStyle: textDecorationStyle ?? style.decorationStyle,
+      decorationThickness: textDecorationThickness ?? style.decorationThickness,
     );
   }
 
@@ -467,27 +553,48 @@ class _ElementStyle {
         backgroundColor != null ||
         border != null ||
         borderRadius != null ||
+        boxShadow != null ||
         width != null ||
-        maxWidth != null) {
+        height != null ||
+        _constraints != null) {
       current = Container(
         width: width,
-        constraints: maxWidth == null
-            ? null
-            : BoxConstraints(maxWidth: maxWidth!),
+        height: height,
+        constraints: _constraints,
         padding: padding,
         decoration:
-            backgroundColor == null && border == null && borderRadius == null
+            backgroundColor == null &&
+                border == null &&
+                borderRadius == null &&
+                boxShadow == null
             ? null
             : BoxDecoration(
                 color: backgroundColor,
                 border: border,
                 borderRadius: borderRadius,
+                boxShadow: boxShadow,
               ),
         child: current,
       );
     }
+    if (opacity != null) current = Opacity(opacity: opacity!, child: current);
     if (margin != null) current = Padding(padding: margin!, child: current);
     return current;
+  }
+
+  BoxConstraints? get _constraints {
+    if (minWidth == null &&
+        maxWidth == null &&
+        minHeight == null &&
+        maxHeight == null) {
+      return null;
+    }
+    return BoxConstraints(
+      minWidth: minWidth ?? 0,
+      maxWidth: maxWidth ?? double.infinity,
+      minHeight: minHeight ?? 0,
+      maxHeight: maxHeight ?? double.infinity,
+    );
   }
 }
 
@@ -511,22 +618,67 @@ EdgeInsetsGeometry? _parseBox(Map<String, String> style, String prefix) {
   final right = _parseCssSize(style['$prefix-right']) ?? all;
   final bottom = _parseCssSize(style['$prefix-bottom']) ?? all;
   final left = _parseCssSize(style['$prefix-left']) ?? all;
-  if (top == null && right == null && bottom == null && left == null)
+  if (top == null && right == null && bottom == null && left == null) {
     return null;
+  }
   return EdgeInsets.fromLTRB(left ?? 0, top ?? 0, right ?? 0, bottom ?? 0);
 }
 
 BoxBorder? _parseBorder(Map<String, String> style, BuildContext context) {
-  final border = style['border'];
-  final width =
-      _parseCssSize(style['border-width']) ?? _firstBorderWidth(border);
-  if (border == null && width == null) return null;
-  return Border.all(
-    color:
-        _parseColor(style['border-color'] ?? border) ??
-        Theme.of(context).colorScheme.outlineVariant,
-    width: width ?? 1,
+  final hasBorder =
+      style.containsKey('border') ||
+      style.containsKey('border-width') ||
+      style.containsKey('border-style') ||
+      style.containsKey('border-color') ||
+      style.keys.any(
+        (key) => RegExp(r'^border-(top|right|bottom|left)(-|$)').hasMatch(key),
+      );
+  if (!hasBorder) return null;
+
+  return Border(
+    top: _parseBorderSide(style, context, 'top'),
+    right: _parseBorderSide(style, context, 'right'),
+    bottom: _parseBorderSide(style, context, 'bottom'),
+    left: _parseBorderSide(style, context, 'left'),
   );
+}
+
+BorderSide _parseBorderSide(
+  Map<String, String> style,
+  BuildContext context,
+  String side,
+) {
+  final sideValue = style['border-$side'];
+  final allValue = style['border'];
+  final hasSideOrAll =
+      sideValue != null ||
+      allValue != null ||
+      style.containsKey('border-$side-width') ||
+      style.containsKey('border-$side-style') ||
+      style.containsKey('border-$side-color') ||
+      style.containsKey('border-width') ||
+      style.containsKey('border-style') ||
+      style.containsKey('border-color');
+  if (!hasSideOrAll) return BorderSide.none;
+
+  final borderStyle =
+      style['border-$side-style'] ??
+      _firstBorderStyle(sideValue) ??
+      style['border-style'] ??
+      _firstBorderStyle(allValue);
+  if (borderStyle == 'none' || borderStyle == 'hidden') return BorderSide.none;
+
+  final width =
+      _parseCssSize(style['border-$side-width']) ??
+      _firstBorderWidth(sideValue) ??
+      _parseCssSize(style['border-width']) ??
+      _firstBorderWidth(allValue) ??
+      1;
+  final color =
+      _parseColor(style['border-$side-color'] ?? sideValue) ??
+      _parseColor(style['border-color'] ?? allValue) ??
+      Theme.of(context).colorScheme.outlineVariant;
+  return BorderSide(color: color, width: width);
 }
 
 double? _firstBorderWidth(String? value) {
@@ -536,6 +688,59 @@ double? _firstBorderWidth(String? value) {
     if (parsed != null) return parsed;
   }
   return null;
+}
+
+String? _firstBorderStyle(String? value) {
+  if (value == null) return null;
+  const styles = {
+    'none',
+    'hidden',
+    'solid',
+    'dashed',
+    'dotted',
+    'double',
+    'groove',
+    'ridge',
+    'inset',
+    'outset',
+  };
+  for (final part in value.trim().toLowerCase().split(RegExp(r'\s+'))) {
+    if (styles.contains(part)) return part;
+  }
+  return null;
+}
+
+List<BoxShadow>? _parseBoxShadow(String? value) {
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text.isEmpty || text == 'none' || text.contains('inset')) return null;
+
+  final color = _parseColor(text) ?? Colors.black.withValues(alpha: 0.18);
+  final numericSource = text
+      .replaceAll(RegExp(r'rgba?\([^)]*\)'), ' ')
+      .replaceAll(RegExp(r'#[0-9a-f]{3,8}'), ' ');
+  final sizes = RegExp(r'-?\d+(?:\.\d+)?(?:px|em|rem)?')
+      .allMatches(numericSource)
+      .map((match) => _parseCssSize(match.group(0)))
+      .whereType<double>()
+      .toList();
+  if (sizes.length < 2) return null;
+
+  return [
+    BoxShadow(
+      color: color,
+      offset: Offset(sizes[0], sizes[1]),
+      blurRadius: sizes.length >= 3 ? math.max(0, sizes[2]) : 0,
+      spreadRadius: sizes.length >= 4 ? sizes[3] : 0,
+    ),
+  ];
+}
+
+double? _parseOpacity(String? value) {
+  if (value == null) return null;
+  final parsed = double.tryParse(value.trim());
+  if (parsed == null) return null;
+  return parsed.clamp(0, 1).toDouble();
 }
 
 Color? _parseColor(String? value) {
@@ -617,6 +822,91 @@ TextAlign? _parseTextAlign(String? value) {
     'justify' => TextAlign.justify,
     _ => null,
   };
+}
+
+TextDecoration? _parseTextDecoration(Map<String, String> style) {
+  final value = style['text-decoration-line'] ?? style['text-decoration'];
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text.isEmpty) return null;
+  if (text == 'none') return TextDecoration.none;
+
+  final decorations = <TextDecoration>[];
+  if (text.contains('underline')) decorations.add(TextDecoration.underline);
+  if (text.contains('line-through')) {
+    decorations.add(TextDecoration.lineThrough);
+  }
+  if (text.contains('overline')) decorations.add(TextDecoration.overline);
+  if (decorations.isEmpty) return null;
+  return TextDecoration.combine(decorations);
+}
+
+TextDecorationStyle? _parseTextDecorationStyle(String? value) {
+  return switch (value?.trim().toLowerCase()) {
+    'double' => TextDecorationStyle.double,
+    'dotted' => TextDecorationStyle.dotted,
+    'dashed' => TextDecorationStyle.dashed,
+    'wavy' => TextDecorationStyle.wavy,
+    'solid' => TextDecorationStyle.solid,
+    _ => null,
+  };
+}
+
+List<_GridColumn> _parseGridTemplateColumns(String? value) {
+  if (value == null) return const [];
+  final columns = <_GridColumn>[];
+  for (final rawPart in value.trim().toLowerCase().split(RegExp(r'\s+'))) {
+    if (rawPart.isEmpty) continue;
+    if (rawPart == 'auto') {
+      columns.add(const _GridColumn.auto());
+      continue;
+    }
+    if (rawPart.endsWith('fr')) {
+      final flex = double.tryParse(rawPart.substring(0, rawPart.length - 2));
+      if (flex == null || flex <= 0) return const [];
+      columns.add(_GridColumn.flex(flex));
+      continue;
+    }
+    final width = _parseCssSize(rawPart);
+    if (width == null) return const [];
+    columns.add(_GridColumn.fixed(width));
+  }
+  return columns;
+}
+
+CrossAxisAlignment _crossAxisAlignmentForAlignItems(String? value) {
+  return switch (value?.trim().toLowerCase()) {
+    'center' => CrossAxisAlignment.center,
+    'end' || 'flex-end' => CrossAxisAlignment.end,
+    'stretch' => CrossAxisAlignment.stretch,
+    _ => CrossAxisAlignment.start,
+  };
+}
+
+class _GridColumn {
+  const _GridColumn.auto() : flex = null, width = null;
+
+  const _GridColumn.flex(double value) : flex = value, width = null;
+
+  const _GridColumn.fixed(double value) : flex = null, width = value;
+
+  final double? flex;
+  final double? width;
+
+  Widget wrap(Widget child) {
+    final fixedWidth = width;
+    if (fixedWidth != null) return SizedBox(width: fixedWidth, child: child);
+
+    final flexValue = flex;
+    if (flexValue != null) {
+      return Expanded(
+        flex: math.max(1, (flexValue * 1000).round()),
+        child: child,
+      );
+    }
+
+    return child;
+  }
 }
 
 String _normalizeText(String text) =>
