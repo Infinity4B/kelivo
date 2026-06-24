@@ -747,7 +747,9 @@ Color? _parseColor(String? value) {
   if (value == null) return null;
   final text = value.trim().toLowerCase();
   if (text.isEmpty || text == 'transparent') return Colors.transparent;
-  final hex = RegExp(r'#([0-9a-f]{3}|[0-9a-f]{6})').firstMatch(text);
+  final hex = RegExp(
+    r'#([0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-f])',
+  ).firstMatch(text);
   if (hex != null) {
     var raw = hex.group(1)!;
     if (raw.length == 3) raw = raw.split('').map((c) => '$c$c').join();

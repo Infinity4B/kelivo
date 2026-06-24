@@ -28,6 +28,17 @@ void main() {
       expect(find.byType(Row), findsWidgets);
     });
 
+    testWidgets('keeps six-digit hex backgrounds from becoming pink', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(NativeHtmlFragmentView(fragment: _fragment(_gridCardHtml))),
+      );
+
+      expect(_containerWithColor(const Color(0xFFFAFAFA)), findsOneWidget);
+      expect(_containerWithColor(const Color(0xFFFFAAFF)), findsNothing);
+    });
+
     testWidgets('updates data-role content when a data-step button is tapped', (
       tester,
     ) async {
@@ -85,6 +96,14 @@ HtmlFragment _fragment(String rawHtml, {bool allowEventHandlers = false}) {
 Finder _richTextContaining(String text) {
   return find.byWidgetPredicate((widget) {
     return widget is RichText && widget.text.toPlainText().contains(text);
+  });
+}
+
+Finder _containerWithColor(Color color) {
+  return find.byWidgetPredicate((widget) {
+    if (widget is! Container) return false;
+    final decoration = widget.decoration;
+    return decoration is BoxDecoration && decoration.color == color;
   });
 }
 
