@@ -39,6 +39,26 @@ void main() {
       expect(_containerWithColor(const Color(0xFFFFAAFF)), findsNothing);
     });
 
+    testWidgets('keeps HTML backgrounds and fixes unreadable dark-mode text', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          NativeHtmlFragmentView(
+            fragment: _fragment(
+              '<div style="background:#fafafa;padding:12px;">Title</div>',
+            ),
+          ),
+          theme: ThemeData.dark(),
+        ),
+      );
+
+      expect(_containerWithColor(const Color(0xFFFAFAFA)), findsOneWidget);
+      expect(_richTextContaining('Title'), findsOneWidget);
+      final richText = tester.widget<RichText>(_richTextContaining('Title'));
+      expect(richText.text.style?.color, Colors.black);
+    });
+
     testWidgets('updates data-role content when a data-step button is tapped', (
       tester,
     ) async {
@@ -77,8 +97,11 @@ void main() {
   });
 }
 
-Widget _host(Widget child) {
-  return MaterialApp(home: Scaffold(body: child));
+Widget _host(Widget child, {ThemeData? theme}) {
+  return MaterialApp(
+    theme: theme,
+    home: Scaffold(body: child),
+  );
 }
 
 HtmlFragment _fragment(String rawHtml, {bool allowEventHandlers = false}) {

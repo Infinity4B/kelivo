@@ -90,13 +90,13 @@ class _NativeHtmlRenderer {
   List<Widget> renderNodes(List<dom.Node> nodes) {
     final widgets = <Widget>[];
     for (final node in nodes) {
-      final widget = renderBlock(node, _baseStyle);
+      final widget = renderBlock(node, _baseStyle, null);
       if (widget != null) widgets.add(widget);
     }
     return widgets;
   }
 
-  Widget? renderBlock(dom.Node node, TextStyle style) {
+  Widget? renderBlock(dom.Node node, TextStyle style, Color? backgroundColor) {
     if (node is dom.Text) {
       final text = _normalizeText(node.text);
       if (text.isEmpty) return null;
@@ -108,35 +108,51 @@ class _NativeHtmlRenderer {
     if (tag == 'script') return null;
     if (tag == 'br') return const SizedBox(height: 8);
     if (tag == 'ul' || tag == 'ol') {
-      return _renderList(node, style, ordered: tag == 'ol');
+      return _renderList(
+        node,
+        style,
+        backgroundColor: backgroundColor,
+        ordered: tag == 'ol',
+      );
     }
-    if (tag == 'table') return _renderTable(node, style);
-    if (tag == 'pre') return _renderPre(node, style);
-    if (tag == 'button') return _renderButton(node, style);
+    if (tag == 'table') return _renderTable(node, style, backgroundColor);
+    if (tag == 'pre') return _renderPre(node, style, backgroundColor);
+    if (tag == 'button') return _renderButton(node, style, backgroundColor);
 
     final styled = _ElementStyle.from(node, context);
-    final nextStyle = styled.applyTextStyle(_styleForTag(tag, style));
+    final effectiveBackground = _effectiveBackground(
+      styled.backgroundColor,
+      backgroundColor,
+    );
+    final nextStyle = _ensureReadableTextStyle(
+      styled.applyTextStyle(_styleForTag(tag, style)),
+      effectiveBackground,
+    );
     final replacement = _replacementFor(node);
     if (replacement != null) {
       return styled.wrap(context, Text(replacement, style: nextStyle));
     }
     final inlineOnly = _hasOnlyInlineChildren(node);
     final child = inlineOnly
-        ? _richTextFor(node.nodes, nextStyle)
+        ? _richTextFor(node.nodes, nextStyle, effectiveBackground)
         : Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: renderChildren(node, nextStyle),
+            children: renderChildren(node, nextStyle, effectiveBackground),
           );
     return styled.wrap(context, child);
   }
 
-  List<Widget> renderChildren(dom.Element element, TextStyle style) {
+  List<Widget> renderChildren(
+    dom.Element element,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     final styleMap = _styleMap(element);
     final display = styleMap['display']?.toLowerCase();
     final children = <Widget>[];
     for (final node in element.nodes) {
-      final child = renderBlock(node, style);
+      final child = renderBlock(node, style, backgroundColor);
       if (child != null) children.add(child);
     }
     if (display == 'flex') {
@@ -198,7 +214,11 @@ class _NativeHtmlRenderer {
     );
   }
 
-  InlineSpan renderInline(dom.Node node, TextStyle style) {
+  InlineSpan renderInline(
+    dom.Node node,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     if (node is dom.Text) return TextSpan(text: node.text, style: style);
     if (node is! dom.Element) return const TextSpan(text: '');
 
@@ -206,18 +226,29 @@ class _NativeHtmlRenderer {
     if (tag == 'br') return const TextSpan(text: '\n');
 
     final styled = _ElementStyle.from(node, context);
-    final nextStyle = styled.applyTextStyle(_styleForTag(tag, style));
+    final effectiveBackground = _effectiveBackground(
+      styled.backgroundColor,
+      backgroundColor,
+    );
+    final nextStyle = _ensureReadableTextStyle(
+      styled.applyTextStyle(_styleForTag(tag, style)),
+      effectiveBackground,
+    );
     final replacement = _replacementFor(node);
     if (replacement != null) {
       return TextSpan(text: replacement, style: nextStyle);
     }
     final children = node.nodes
-        .map((child) => renderInline(child, nextStyle))
+        .map((child) => renderInline(child, nextStyle, effectiveBackground))
         .toList();
     if (tag == 'a') {
       final href = node.attributes['href'];
+      final linkStyle = _ensureReadableTextStyle(
+        nextStyle.copyWith(color: Theme.of(context).colorScheme.primary),
+        effectiveBackground,
+      );
       return TextSpan(
-        style: nextStyle.copyWith(color: Theme.of(context).colorScheme.primary),
+        style: linkStyle,
         recognizer: href == null
             ? null
             : (TapGestureRecognizer()..onTap = () => _openUrl(href)),
@@ -227,23 +258,36 @@ class _NativeHtmlRenderer {
     return TextSpan(style: nextStyle, children: children);
   }
 
-  Widget _richTextFor(List<dom.Node> nodes, TextStyle style) {
+  Widget _richTextFor(
+    List<dom.Node> nodes,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     return RichText(
       text: TextSpan(
         style: style,
-        children: nodes.map((node) => renderInline(node, style)).toList(),
+        children: nodes
+            .map((node) => renderInline(node, style, backgroundColor))
+            .toList(),
       ),
     );
   }
 
-  Widget _renderButton(dom.Element element, TextStyle style) {
+  Widget _renderButton(
+    dom.Element element,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     final step = element.attributes['data-step'];
     final active = step != null && step == selectedStep;
     final label = element.text.trim();
     final cs = Theme.of(context).colorScheme;
     final styled = _ElementStyle.from(element, context);
     final bg = active ? cs.onSurface : (styled.backgroundColor ?? cs.surface);
-    final fg = active ? cs.surface : (styled.textColor ?? cs.onSurface);
+    final fg = _ensureReadableColor(
+      active ? cs.surface : (styled.textColor ?? style.color ?? cs.onSurface),
+      _effectiveBackground(bg, backgroundColor),
+    );
     return Padding(
       padding: styled.margin ?? EdgeInsets.zero,
       child: GestureDetector(
@@ -274,6 +318,7 @@ class _NativeHtmlRenderer {
   Widget _renderList(
     dom.Element element,
     TextStyle style, {
+    Color? backgroundColor,
     required bool ordered,
   }) {
     final items = element.children
@@ -288,25 +333,42 @@ class _NativeHtmlRenderer {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(ordered ? '${i + 1}. ' : '• ', style: style),
-              Expanded(child: _richTextFor(items[i].nodes, style)),
+              Expanded(
+                child: _richTextFor(items[i].nodes, style, backgroundColor),
+              ),
             ],
           ),
       ],
     );
   }
 
-  Widget _renderPre(dom.Element element, TextStyle style) {
+  Widget _renderPre(
+    dom.Element element,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     final styled = _ElementStyle.from(element, context);
+    final effectiveBackground = _effectiveBackground(
+      styled.backgroundColor,
+      backgroundColor,
+    );
     return styled.wrap(
       context,
       SelectableText(
         element.text,
-        style: style.copyWith(fontFamily: 'monospace'),
+        style: _ensureReadableTextStyle(
+          styled.applyTextStyle(style.copyWith(fontFamily: 'monospace')),
+          effectiveBackground,
+        ),
       ),
     );
   }
 
-  Widget _renderTable(dom.Element element, TextStyle style) {
+  Widget _renderTable(
+    dom.Element element,
+    TextStyle style,
+    Color? backgroundColor,
+  ) {
     final rows = element.querySelectorAll('tr');
     return Table(
       defaultColumnWidth: const IntrinsicColumnWidth(),
@@ -329,6 +391,7 @@ class _NativeHtmlRenderer {
                   child: _richTextFor(
                     cell.nodes,
                     _styleForTag(cell.localName?.toLowerCase() ?? '', style),
+                    backgroundColor,
                   ),
                 ),
             ],
@@ -784,6 +847,33 @@ Color? _parseColor(String? value) {
     'gray' || 'grey' => Colors.grey,
     _ => null,
   };
+}
+
+Color? _effectiveBackground(Color? current, Color? inherited) {
+  return current ?? inherited;
+}
+
+TextStyle _ensureReadableTextStyle(TextStyle style, Color? backgroundColor) {
+  final color = style.color;
+  if (color == null) return style;
+  return style.copyWith(color: _ensureReadableColor(color, backgroundColor));
+}
+
+Color _ensureReadableColor(Color color, Color? backgroundColor) {
+  if (backgroundColor == null || backgroundColor.a < 1) return color;
+  if (_contrastRatio(color, backgroundColor) >= 4.5) return color;
+
+  final blackContrast = _contrastRatio(Colors.black, backgroundColor);
+  final whiteContrast = _contrastRatio(Colors.white, backgroundColor);
+  return blackContrast >= whiteContrast ? Colors.black : Colors.white;
+}
+
+double _contrastRatio(Color foreground, Color background) {
+  final foregroundLuminance = foreground.computeLuminance();
+  final backgroundLuminance = background.computeLuminance();
+  final lighter = math.max(foregroundLuminance, backgroundLuminance);
+  final darker = math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 double? _parseCssSize(String? value) {
