@@ -237,6 +237,7 @@ void main() {
       expect(document, contains("post('width'"));
       expect(document, contains('capture: true'));
       expect(document, contains('html-fragment-content'));
+      expect(document, contains('background: transparent'));
     });
 
     test('keeps executable scripts when user scripts are enabled', () {

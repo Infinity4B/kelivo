@@ -12,7 +12,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:webview_windows/webview_windows.dart' as winweb;
 
+import 'html_fragment_render_classifier.dart';
 import 'html_fragment_parser.dart';
+import 'native_html_fragment_view.dart';
 
 class HtmlFragmentView extends StatefulWidget {
   const HtmlFragmentView({
@@ -34,7 +36,6 @@ class HtmlFragmentView extends StatefulWidget {
 
 class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   static const Duration _streamingLoadInterval = Duration(milliseconds: 80);
-  static const Duration _streamingScrollPause = Duration(milliseconds: 220);
 
   WebViewController? _controller;
   winweb.WebviewController? _windowsController;
@@ -45,13 +46,11 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   double? _availableWidth;
   double? _pendingAvailableWidth;
   double? _contentWidth;
-  ScrollPosition? _scrollPosition;
   String? _loadedDocument;
   bool _loadScheduled = false;
   bool _scheduledLoadForce = false;
   bool _availableWidthUpdateScheduled = false;
   DateTime? _lastStreamingLoadAt;
-  DateTime? _deferStreamingLoadsUntil;
 
   @override
   void initState() {
@@ -62,8 +61,7 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _bindScrollablePosition();
-    _scheduleLoad();
+    if (_usesWebView) _scheduleLoad();
   }
 
   @override
@@ -72,8 +70,13 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
     if (oldWidget.fragment.sanitizedHtml != widget.fragment.sanitizedHtml ||
         oldWidget.fragment.complete != widget.fragment.complete ||
         oldWidget.streaming != widget.streaming) {
-      _scheduleLoad(force: true);
+      if (_usesWebView) _scheduleLoad(force: true);
     }
+  }
+
+  bool get _usesWebView {
+    return classifyHtmlFragment(widget.fragment.sanitizedHtml) ==
+        HtmlFragmentRenderMode.webView;
   }
 
   void _scheduleLoad({bool force = false}) {
@@ -99,16 +102,6 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   void _scheduleStreamingLoad({bool force = false}) {
     _scheduledLoadForce = _scheduledLoadForce || force;
     final now = DateTime.now();
-    final deferUntil = _deferStreamingLoadsUntil;
-    if (deferUntil != null && now.isBefore(deferUntil)) {
-      _streamingLoadTimer?.cancel();
-      _streamingLoadTimer = Timer(deferUntil.difference(now), () {
-        if (!mounted) return;
-        _scheduleStreamingLoad(force: _scheduledLoadForce);
-      });
-      return;
-    }
-
     final lastLoadAt = _lastStreamingLoadAt;
     final elapsed = lastLoadAt == null ? null : now.difference(lastLoadAt);
     final shouldLoadNow =
@@ -141,16 +134,6 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
       _loadScheduled = false;
       _scheduledLoadForce = false;
       if (markStreamingLoad) {
-        final now = DateTime.now();
-        final deferUntil = _deferStreamingLoadsUntil;
-        if (deferUntil != null && now.isBefore(deferUntil)) {
-          _streamingLoadTimer?.cancel();
-          _streamingLoadTimer = Timer(deferUntil.difference(now), () {
-            if (!mounted) return;
-            _scheduleStreamingLoad(force: shouldForce);
-          });
-          return;
-        }
         _lastStreamingLoadAt = DateTime.now();
       }
       unawaited(_ensureLoaded(force: shouldForce));
@@ -442,64 +425,20 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
   void _handleWheel(Map<String, dynamic> data) {
     final rawDeltaY = (data['deltaY'] as num?)?.toDouble();
     if (rawDeltaY == null || rawDeltaY == 0) return;
-    _pauseStreamingLoadsForScroll();
     final deltaMode = (data['deltaMode'] as num?)?.toInt() ?? 0;
     final multiplier = switch (deltaMode) {
       1 => 32.0,
       2 => _height,
       _ => 1.0,
     };
-    final position = _scrollPosition ?? Scrollable.maybeOf(context)?.position;
+    final position = Scrollable.maybeOf(context)?.position;
     if (position == null || !position.hasPixels) return;
     position.pointerScroll(rawDeltaY * multiplier);
-  }
-
-  void _bindScrollablePosition() {
-    final position = Scrollable.maybeOf(context)?.position;
-    if (identical(position, _scrollPosition)) return;
-    _scrollPosition?.removeListener(_handleAncestorScrollOffset);
-    _scrollPosition?.isScrollingNotifier.removeListener(
-      _handleAncestorScrollActivity,
-    );
-    _scrollPosition = position;
-    position?.addListener(_handleAncestorScrollOffset);
-    position?.isScrollingNotifier.addListener(_handleAncestorScrollActivity);
-  }
-
-  void _handleAncestorScrollOffset() {
-    _pauseStreamingLoadsForScroll();
-  }
-
-  void _handleAncestorScrollActivity() {
-    if (_scrollPosition?.isScrollingNotifier.value ?? false) {
-      _pauseStreamingLoadsForScroll();
-    }
-  }
-
-  void _pauseStreamingLoadsForScroll() {
-    if (!widget.streaming) return;
-    final pauseUntil = DateTime.now().add(_streamingScrollPause);
-    final current = _deferStreamingLoadsUntil;
-    if (current == null || pauseUntil.isAfter(current)) {
-      _deferStreamingLoadsUntil = pauseUntil;
-    }
-    if (_streamingLoadTimer?.isActive ?? false) {
-      _streamingLoadTimer?.cancel();
-      _streamingLoadTimer = Timer(_streamingScrollPause, () {
-        if (!mounted) return;
-        _scheduleStreamingLoad(force: _scheduledLoadForce);
-      });
-    }
   }
 
   @override
   void dispose() {
     _streamingLoadTimer?.cancel();
-    _scrollPosition?.removeListener(_handleAncestorScrollOffset);
-    _scrollPosition?.isScrollingNotifier.removeListener(
-      _handleAncestorScrollActivity,
-    );
-    _scrollPosition = null;
     unawaited(_windowsMessageSubscription?.cancel());
     _windowsMessageSubscription = null;
     _windowsController?.dispose();
@@ -508,6 +447,16 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView> {
 
   @override
   Widget build(BuildContext context) {
+    final renderMode = classifyHtmlFragment(widget.fragment.sanitizedHtml);
+    if (renderMode != HtmlFragmentRenderMode.webView) {
+      return NativeHtmlFragmentView(
+        key: ValueKey('native-html-fragment-view-${widget.fragment.index}'),
+        fragment: widget.fragment,
+        enableDeclarativeInteractions:
+            renderMode == HtmlFragmentRenderMode.nativeInteractive,
+      );
+    }
+
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final unsupported = defaultTargetPlatform == TargetPlatform.linux;
@@ -647,7 +596,7 @@ String buildHtmlFragmentDocument({
     html, body { margin: 0; padding: 0; width: var(--kelivo-host-width); max-width: var(--kelivo-host-width); background: transparent; color: var(--kelivo-fg); overflow: hidden; }
     body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: block; }
     a { color: var(--kelivo-link); }
-    #html-fragment-root { box-sizing: border-box; display: inline-block; width: fit-content; max-width: var(--kelivo-host-width); background: var(--kelivo-bg); color: var(--kelivo-fg); overflow: hidden; vertical-align: top; }
+    #html-fragment-root { box-sizing: border-box; display: inline-block; width: fit-content; max-width: var(--kelivo-host-width); background: transparent; color: var(--kelivo-fg); overflow: hidden; vertical-align: top; }
     #html-fragment-content { box-sizing: border-box; display: inline-block; width: fit-content; max-width: var(--kelivo-host-width); vertical-align: top; }
     * { box-sizing: border-box; max-width: 100%; overscroll-behavior: none; }
     img, svg, canvas, video { max-width: 100%; }

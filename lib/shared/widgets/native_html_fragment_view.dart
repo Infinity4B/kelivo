@@ -1,0 +1,635 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
+import 'package:url_launcher/url_launcher.dart';
+
+import 'html_fragment_parser.dart';
+
+class NativeHtmlFragmentView extends StatefulWidget {
+  const NativeHtmlFragmentView({
+    super.key,
+    required this.fragment,
+    this.enableDeclarativeInteractions = false,
+  });
+
+  final HtmlFragment fragment;
+  final bool enableDeclarativeInteractions;
+
+  @override
+  State<NativeHtmlFragmentView> createState() => _NativeHtmlFragmentViewState();
+}
+
+class _NativeHtmlFragmentViewState extends State<NativeHtmlFragmentView> {
+  String? _selectedStep;
+
+  @override
+  void didUpdateWidget(covariant NativeHtmlFragmentView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fragment.sanitizedHtml != widget.fragment.sanitizedHtml) {
+      _selectedStep = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fragment = html_parser.parseFragment(
+      widget.fragment.sanitizedHtml,
+      container: 'div',
+    );
+    final interaction = widget.enableDeclarativeInteractions
+        ? _HtmlInteractionData.parse(fragment)
+        : const _HtmlInteractionData.empty();
+    final selectedStep = _selectedStep ?? interaction.initialStep;
+    final renderer = _NativeHtmlRenderer(
+      context: context,
+      interaction: interaction,
+      selectedStep: selectedStep,
+      onStepSelected: (step) => setState(() => _selectedStep = step),
+    );
+    final children = renderer.renderNodes(fragment.nodes);
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class _NativeHtmlRenderer {
+  const _NativeHtmlRenderer({
+    required this.context,
+    required this.interaction,
+    required this.selectedStep,
+    required this.onStepSelected,
+  });
+
+  final BuildContext context;
+  final _HtmlInteractionData interaction;
+  final String? selectedStep;
+  final ValueChanged<String> onStepSelected;
+
+  TextStyle get _baseStyle {
+    return DefaultTextStyle.of(context).style.copyWith(
+      color: Theme.of(context).colorScheme.onSurface,
+      height: 1.55,
+    );
+  }
+
+  List<Widget> renderNodes(List<dom.Node> nodes) {
+    final widgets = <Widget>[];
+    for (final node in nodes) {
+      final widget = renderBlock(node, _baseStyle);
+      if (widget != null) widgets.add(widget);
+    }
+    return widgets;
+  }
+
+  Widget? renderBlock(dom.Node node, TextStyle style) {
+    if (node is dom.Text) {
+      final text = _normalizeText(node.text);
+      if (text.isEmpty) return null;
+      return Text(text, style: style);
+    }
+    if (node is! dom.Element) return null;
+
+    final tag = node.localName?.toLowerCase() ?? '';
+    if (tag == 'script') return null;
+    if (tag == 'br') return const SizedBox(height: 8);
+    if (tag == 'ul' || tag == 'ol')
+      return _renderList(node, style, ordered: tag == 'ol');
+    if (tag == 'table') return _renderTable(node, style);
+    if (tag == 'pre') return _renderPre(node, style);
+    if (tag == 'button') return _renderButton(node, style);
+
+    final styled = _ElementStyle.from(node, context);
+    final nextStyle = styled.applyTextStyle(_styleForTag(tag, style));
+    final replacement = _replacementFor(node);
+    if (replacement != null) {
+      return styled.wrap(context, Text(replacement, style: nextStyle));
+    }
+    final inlineOnly = _hasOnlyInlineChildren(node);
+    final child = inlineOnly
+        ? _richTextFor(node.nodes, nextStyle)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: renderChildren(node, nextStyle),
+          );
+    return styled.wrap(context, child);
+  }
+
+  List<Widget> renderChildren(dom.Element element, TextStyle style) {
+    final display = _styleMap(element)['display']?.toLowerCase();
+    final children = <Widget>[];
+    for (final node in element.nodes) {
+      final child = renderBlock(node, style);
+      if (child != null) children.add(child);
+    }
+    if (display == 'flex') {
+      final gap = _parseCssSize(_styleMap(element)['gap']);
+      return [
+        Wrap(
+          spacing: gap ?? 0,
+          runSpacing: gap ?? 0,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: children,
+        ),
+      ];
+    }
+    return children;
+  }
+
+  InlineSpan renderInline(dom.Node node, TextStyle style) {
+    if (node is dom.Text) return TextSpan(text: node.text, style: style);
+    if (node is! dom.Element) return const TextSpan(text: '');
+
+    final tag = node.localName?.toLowerCase() ?? '';
+    if (tag == 'br') return const TextSpan(text: '\n');
+
+    final styled = _ElementStyle.from(node, context);
+    final nextStyle = styled.applyTextStyle(_styleForTag(tag, style));
+    final replacement = _replacementFor(node);
+    if (replacement != null)
+      return TextSpan(text: replacement, style: nextStyle);
+    final children = node.nodes
+        .map((child) => renderInline(child, nextStyle))
+        .toList();
+    if (tag == 'a') {
+      final href = node.attributes['href'];
+      return TextSpan(
+        style: nextStyle.copyWith(color: Theme.of(context).colorScheme.primary),
+        recognizer: href == null
+            ? null
+            : (TapGestureRecognizer()..onTap = () => _openUrl(href)),
+        children: children,
+      );
+    }
+    return TextSpan(style: nextStyle, children: children);
+  }
+
+  Widget _richTextFor(List<dom.Node> nodes, TextStyle style) {
+    return RichText(
+      text: TextSpan(
+        style: style,
+        children: nodes.map((node) => renderInline(node, style)).toList(),
+      ),
+    );
+  }
+
+  Widget _renderButton(dom.Element element, TextStyle style) {
+    final step = element.attributes['data-step'];
+    final active = step != null && step == selectedStep;
+    final label = element.text.trim();
+    final cs = Theme.of(context).colorScheme;
+    final styled = _ElementStyle.from(element, context);
+    final bg = active ? cs.onSurface : (styled.backgroundColor ?? cs.surface);
+    final fg = active ? cs.surface : (styled.textColor ?? cs.onSurface);
+    return Padding(
+      padding: styled.margin ?? EdgeInsets.zero,
+      child: GestureDetector(
+        onTap: step == null ? null : () => onStepSelected(step),
+        child: MouseRegion(
+          cursor: step == null ? MouseCursor.defer : SystemMouseCursors.click,
+          child: Container(
+            padding:
+                styled.padding ??
+                const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: styled.borderRadius ?? BorderRadius.circular(999),
+              border: Border.all(
+                color: active ? cs.onSurface : cs.outlineVariant,
+              ),
+            ),
+            child: Text(
+              label,
+              style: style.copyWith(color: fg, fontSize: style.fontSize ?? 13),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _renderList(
+    dom.Element element,
+    TextStyle style, {
+    required bool ordered,
+  }) {
+    final items = element.children
+        .where((child) => child.localName?.toLowerCase() == 'li')
+        .toList();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < items.length; i++)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(ordered ? '${i + 1}. ' : '• ', style: style),
+              Expanded(child: _richTextFor(items[i].nodes, style)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _renderPre(dom.Element element, TextStyle style) {
+    final styled = _ElementStyle.from(element, context);
+    return styled.wrap(
+      context,
+      SelectableText(
+        element.text,
+        style: style.copyWith(fontFamily: 'monospace'),
+      ),
+    );
+  }
+
+  Widget _renderTable(dom.Element element, TextStyle style) {
+    final rows = element.querySelectorAll('tr');
+    return Table(
+      defaultColumnWidth: const IntrinsicColumnWidth(),
+      border: TableBorder.all(
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+      children: [
+        for (final row in rows)
+          TableRow(
+            children: [
+              for (final cell in row.children.where((child) {
+                final tag = child.localName?.toLowerCase();
+                return tag == 'td' || tag == 'th';
+              }))
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: _richTextFor(
+                    cell.nodes,
+                    _styleForTag(cell.localName?.toLowerCase() ?? '', style),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  TextStyle _styleForTag(String tag, TextStyle style) {
+    return switch (tag) {
+      'strong' || 'b' || 'th' => style.copyWith(fontWeight: FontWeight.w700),
+      'em' || 'i' => style.copyWith(fontStyle: FontStyle.italic),
+      'small' => style.copyWith(fontSize: (style.fontSize ?? 14) * 0.85),
+      'code' => style.copyWith(fontFamily: 'monospace'),
+      'h1' => style.copyWith(
+        fontSize: 26,
+        fontWeight: FontWeight.w800,
+        height: 1.25,
+      ),
+      'h2' => style.copyWith(
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        height: 1.25,
+      ),
+      'h3' => style.copyWith(
+        fontSize: 19,
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+      ),
+      'h4' => style.copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        height: 1.35,
+      ),
+      'h5' || 'h6' => style.copyWith(fontWeight: FontWeight.w700),
+      _ => style,
+    };
+  }
+
+  bool _hasOnlyInlineChildren(dom.Element element) {
+    return element.nodes.every((node) {
+      if (node is dom.Text) return true;
+      if (node is! dom.Element) return true;
+      final tag = node.localName?.toLowerCase() ?? '';
+      return _inlineTags.contains(tag) && _hasOnlyInlineChildren(node);
+    });
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  String? _replacementFor(dom.Element element) {
+    final role = element.attributes['data-role'];
+    if (role == null) return null;
+    return interaction.replacementFor(role, selectedStep);
+  }
+}
+
+class _HtmlInteractionData {
+  const _HtmlInteractionData(this.entries, this.initialStep);
+
+  const _HtmlInteractionData.empty() : entries = const {}, initialStep = null;
+
+  final Map<String, Map<String, dynamic>> entries;
+  final String? initialStep;
+
+  static _HtmlInteractionData parse(dom.DocumentFragment fragment) {
+    final steps = <String>[];
+    for (final button in fragment.querySelectorAll('[data-step]')) {
+      final step = button.attributes['data-step'];
+      if (step != null && step.isNotEmpty) steps.add(step);
+    }
+
+    final entries = <String, Map<String, dynamic>>{};
+    for (final script in fragment.querySelectorAll(
+      'script[type="application/json"]',
+    )) {
+      try {
+        final decoded = jsonDecode(script.text.trim());
+        final source = decoded is Map<String, dynamic>
+            ? (decoded['steps'] is Map<String, dynamic>
+                  ? decoded['steps'] as Map<String, dynamic>
+                  : decoded)
+            : const <String, dynamic>{};
+        for (final entry in source.entries) {
+          if (entry.value is Map<String, dynamic>) {
+            entries[entry.key] = entry.value as Map<String, dynamic>;
+          }
+        }
+      } catch (_) {}
+    }
+    return _HtmlInteractionData(entries, steps.isEmpty ? null : steps.first);
+  }
+
+  String? replacementFor(String role, String? selectedStep) {
+    final step = selectedStep;
+    if (step == null) return null;
+    final entry = entries[step];
+    final value = switch (role) {
+      'title' => entry?['title'],
+      'desc' => entry?['desc'],
+      _ => null,
+    };
+    return value?.toString();
+  }
+}
+
+class _ElementStyle {
+  const _ElementStyle({
+    this.textColor,
+    this.backgroundColor,
+    this.padding,
+    this.margin,
+    this.borderRadius,
+    this.border,
+    this.maxWidth,
+    this.width,
+    this.fontSize,
+    this.fontWeight,
+    this.fontStyle,
+    this.lineHeight,
+    this.textAlign,
+  });
+
+  final Color? textColor;
+  final Color? backgroundColor;
+  final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
+  final BorderRadius? borderRadius;
+  final BoxBorder? border;
+  final double? maxWidth;
+  final double? width;
+  final double? fontSize;
+  final FontWeight? fontWeight;
+  final FontStyle? fontStyle;
+  final double? lineHeight;
+  final TextAlign? textAlign;
+
+  static _ElementStyle from(dom.Element element, BuildContext context) {
+    final style = _styleMap(element);
+    final borderRadius = _parseCssSize(style['border-radius']);
+    return _ElementStyle(
+      textColor: _parseColor(style['color']),
+      backgroundColor: _parseColor(
+        style['background-color'] ?? style['background'],
+      ),
+      padding: _parseBox(style, 'padding'),
+      margin: _parseBox(style, 'margin'),
+      borderRadius: borderRadius == null
+          ? null
+          : BorderRadius.circular(borderRadius),
+      border: _parseBorder(style, context),
+      maxWidth: _parseCssSize(style['max-width']),
+      width: _parseCssSize(style['width']),
+      fontSize: _parseCssSize(style['font-size']),
+      fontWeight: _parseFontWeight(style['font-weight']),
+      fontStyle: style['font-style']?.toLowerCase() == 'italic'
+          ? FontStyle.italic
+          : null,
+      lineHeight: _parseLineHeight(style['line-height']),
+      textAlign: _parseTextAlign(style['text-align']),
+    );
+  }
+
+  TextStyle applyTextStyle(TextStyle style) {
+    return style.copyWith(
+      color: textColor ?? style.color,
+      fontSize: fontSize ?? style.fontSize,
+      fontWeight: fontWeight ?? style.fontWeight,
+      fontStyle: fontStyle ?? style.fontStyle,
+      height: lineHeight ?? style.height,
+    );
+  }
+
+  Widget wrap(BuildContext context, Widget child) {
+    Widget current = child;
+    if (textAlign != null && child is RichText) {
+      current = RichText(text: child.text, textAlign: textAlign!);
+    }
+    if (padding != null ||
+        backgroundColor != null ||
+        border != null ||
+        borderRadius != null ||
+        width != null ||
+        maxWidth != null) {
+      current = Container(
+        width: width,
+        constraints: maxWidth == null
+            ? null
+            : BoxConstraints(maxWidth: maxWidth!),
+        padding: padding,
+        decoration:
+            backgroundColor == null && border == null && borderRadius == null
+            ? null
+            : BoxDecoration(
+                color: backgroundColor,
+                border: border,
+                borderRadius: borderRadius,
+              ),
+        child: current,
+      );
+    }
+    if (margin != null) current = Padding(padding: margin!, child: current);
+    return current;
+  }
+}
+
+Map<String, String> _styleMap(dom.Element element) {
+  final result = <String, String>{};
+  final style = element.attributes['style'];
+  if (style == null) return result;
+  for (final rawRule in style.split(';')) {
+    final colon = rawRule.indexOf(':');
+    if (colon <= 0) continue;
+    result[rawRule.substring(0, colon).trim().toLowerCase()] = rawRule
+        .substring(colon + 1)
+        .trim();
+  }
+  return result;
+}
+
+EdgeInsetsGeometry? _parseBox(Map<String, String> style, String prefix) {
+  final all = _parseCssSize(style[prefix]);
+  final top = _parseCssSize(style['$prefix-top']) ?? all;
+  final right = _parseCssSize(style['$prefix-right']) ?? all;
+  final bottom = _parseCssSize(style['$prefix-bottom']) ?? all;
+  final left = _parseCssSize(style['$prefix-left']) ?? all;
+  if (top == null && right == null && bottom == null && left == null)
+    return null;
+  return EdgeInsets.fromLTRB(left ?? 0, top ?? 0, right ?? 0, bottom ?? 0);
+}
+
+BoxBorder? _parseBorder(Map<String, String> style, BuildContext context) {
+  final border = style['border'];
+  final width =
+      _parseCssSize(style['border-width']) ?? _firstBorderWidth(border);
+  if (border == null && width == null) return null;
+  return Border.all(
+    color:
+        _parseColor(style['border-color'] ?? border) ??
+        Theme.of(context).colorScheme.outlineVariant,
+    width: width ?? 1,
+  );
+}
+
+double? _firstBorderWidth(String? value) {
+  if (value == null) return null;
+  for (final part in value.split(RegExp(r'\s+'))) {
+    final parsed = _parseCssSize(part);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+Color? _parseColor(String? value) {
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text.isEmpty || text == 'transparent') return Colors.transparent;
+  final hex = RegExp(r'#([0-9a-f]{3}|[0-9a-f]{6})').firstMatch(text);
+  if (hex != null) {
+    var raw = hex.group(1)!;
+    if (raw.length == 3) raw = raw.split('').map((c) => '$c$c').join();
+    return Color(int.parse('ff$raw', radix: 16));
+  }
+  final rgb = RegExp(r'rgba?\(([^)]+)\)').firstMatch(text);
+  if (rgb != null) {
+    final parts = rgb
+        .group(1)!
+        .split(',')
+        .map((part) => double.tryParse(part.trim()))
+        .toList();
+    if (parts.length >= 3 &&
+        parts[0] != null &&
+        parts[1] != null &&
+        parts[2] != null) {
+      final alpha = parts.length >= 4 ? (parts[3] ?? 1) : 1.0;
+      return Color.fromRGBO(
+        parts[0]!.round(),
+        parts[1]!.round(),
+        parts[2]!.round(),
+        alpha.clamp(0, 1),
+      );
+    }
+  }
+  return switch (text) {
+    'black' => Colors.black,
+    'white' => Colors.white,
+    'red' => Colors.red,
+    'blue' => Colors.blue,
+    'green' => Colors.green,
+    'gray' || 'grey' => Colors.grey,
+    _ => null,
+  };
+}
+
+double? _parseCssSize(String? value) {
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text.isEmpty || text == 'auto' || text.endsWith('%')) return null;
+  final match = RegExp(r'^(-?\d+(?:\.\d+)?)(px|em|rem)?$').firstMatch(text);
+  if (match == null) return null;
+  final number = double.tryParse(match.group(1)!);
+  if (number == null) return null;
+  final unit = match.group(2);
+  return switch (unit) {
+    'em' || 'rem' => number * 16,
+    _ => number,
+  };
+}
+
+FontWeight? _parseFontWeight(String? value) {
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text == 'bold') return FontWeight.w700;
+  final numeric = int.tryParse(text);
+  if (numeric == null) return null;
+  return FontWeight.values[math.min(8, math.max(0, (numeric ~/ 100) - 1))];
+}
+
+double? _parseLineHeight(String? value) {
+  if (value == null) return null;
+  final text = value.trim().toLowerCase();
+  if (text.endsWith('px')) return null;
+  return double.tryParse(text);
+}
+
+TextAlign? _parseTextAlign(String? value) {
+  return switch (value?.trim().toLowerCase()) {
+    'center' => TextAlign.center,
+    'right' => TextAlign.right,
+    'justify' => TextAlign.justify,
+    _ => null,
+  };
+}
+
+String _normalizeText(String text) =>
+    text.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+const Set<String> _inlineTags = {
+  'a',
+  'b',
+  'br',
+  'code',
+  'em',
+  'i',
+  'small',
+  'span',
+  'strong',
+};
