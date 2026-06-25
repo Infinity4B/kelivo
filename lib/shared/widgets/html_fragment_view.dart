@@ -37,12 +37,16 @@ class HtmlFragmentView extends StatefulWidget {
 class _HtmlFragmentViewState extends State<HtmlFragmentView>
     with AutomaticKeepAliveClientMixin<HtmlFragmentView> {
   static const Duration _streamingLoadInterval = Duration(milliseconds: 80);
+  static const Duration _widthReloadDebounce = Duration(milliseconds: 180);
+  static const double _widthReloadThreshold = 24;
 
   WebViewController? _controller;
   winweb.WebviewController? _windowsController;
   StreamSubscription<dynamic>? _windowsMessageSubscription;
   Timer? _streamingLoadTimer;
+  Timer? _widthReloadTimer;
   Object? _platformError;
+  File? _windowsDocumentFile;
   late double _height;
   double? _availableWidth;
   double? _pendingAvailableWidth;
@@ -183,9 +187,12 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView>
       final controller = await _ensureWindowsController();
       if (controller == null) return;
       final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/kelivo_html_fragment_${widget.fragment.index}.html',
-      );
+      final file =
+          _windowsDocumentFile ??
+          File(
+            '${dir.path}/kelivo_html_fragment_${identityHashCode(this)}_${widget.fragment.index}.html',
+          );
+      _windowsDocumentFile = file;
       await file.writeAsString(document, flush: true);
       _loadedDocument = document;
       await controller.loadUrl(file.uri.toString());
@@ -444,10 +451,34 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView>
   @override
   void dispose() {
     _streamingLoadTimer?.cancel();
+    _widthReloadTimer?.cancel();
     unawaited(_windowsMessageSubscription?.cancel());
     _windowsMessageSubscription = null;
     _windowsController?.dispose();
+    unawaited(_deleteWindowsDocumentFile());
     super.dispose();
+  }
+
+  Future<void> _deleteWindowsDocumentFile() async {
+    final file = _windowsDocumentFile;
+    _windowsDocumentFile = null;
+    if (file == null) return;
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kelivo HTML fragment renderer',
+          context: ErrorDescription(
+            'while deleting a Windows inline HTML file',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -556,7 +587,18 @@ class _HtmlFragmentViewState extends State<HtmlFragmentView>
       });
       if (!hadAvailableWidth && _usesWebView) {
         _scheduleLoad(force: true);
+      } else if (_usesWebView &&
+          (latest! - pending).abs() >= _widthReloadThreshold) {
+        _scheduleWidthReload();
       }
+    });
+  }
+
+  void _scheduleWidthReload() {
+    _widthReloadTimer?.cancel();
+    _widthReloadTimer = Timer(_widthReloadDebounce, () {
+      if (!mounted || !_usesWebView) return;
+      _scheduleLoad(force: true);
     });
   }
 }

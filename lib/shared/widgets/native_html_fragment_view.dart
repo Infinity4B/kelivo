@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
@@ -247,12 +246,25 @@ class _NativeHtmlRenderer {
         nextStyle.copyWith(color: Theme.of(context).colorScheme.primary),
         effectiveBackground,
       );
+      if (href == null) {
+        return TextSpan(style: linkStyle, children: children);
+      }
       return TextSpan(
-        style: linkStyle,
-        recognizer: href == null
-            ? null
-            : (TapGestureRecognizer()..onTap = () => _openUrl(href)),
-        children: children,
+        children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: GestureDetector(
+              onTap: () => _openUrl(href),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Text.rich(
+                  TextSpan(style: linkStyle, children: children),
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
     return TextSpan(style: nextStyle, children: children);
