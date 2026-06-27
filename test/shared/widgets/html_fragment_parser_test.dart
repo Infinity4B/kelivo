@@ -266,7 +266,32 @@ void main() {
       expect(document, contains('--kelivo-fg'));
       expect(document, contains('--kelivo-control-bg'));
       expect(document, contains('function fixContrast'));
+      expect(document, contains('function parseColorFromCssBackground'));
+      expect(document, contains('function parseInlineBackground'));
+      expect(document, contains('computed.backgroundImage'));
+      expect(document, contains('inlineStyle'));
       expect(document, contains('new MutationObserver(function ()'));
+    });
+
+    test('keeps inline text colors on light gradient cards in dark mode', () {
+      final document = buildHtmlFragmentDocument(
+        sanitizedHtml:
+            '<div style="background:linear-gradient(145deg, #eef2ff 0%, #fff 55%);color:#312e81">Card</div>',
+        colorScheme: ColorScheme.dark(),
+        allowUserScripts: true,
+      );
+
+      expect(
+        document,
+        contains('linear-gradient(145deg, #eef2ff 0%, #fff 55%)'),
+      );
+      expect(document, contains('color:#312e81'));
+      expect(document, contains('parseInlineBackground(current)'));
+      expect(
+        document,
+        contains('parseColorFromCssBackground(computed.backgroundImage)'),
+      );
+      expect(document, contains('inlineStyle'));
     });
 
     test('injects JSON data-step interaction hydration', () {

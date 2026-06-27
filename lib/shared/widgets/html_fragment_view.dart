@@ -769,6 +769,19 @@ String buildHtmlFragmentDocument({
       }
       function parseColor(value) {
         if (!value || value === 'transparent') return null;
+        const hex = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})\$/i);
+        if (hex) {
+          let raw = hex[1];
+          if (raw.length === 3) raw = raw.split('').map(function (ch) { return ch + ch; }).join('');
+          if (raw.length === 6) {
+            return {
+              r: parseInt(raw.slice(0, 2), 16),
+              g: parseInt(raw.slice(2, 4), 16),
+              b: parseInt(raw.slice(4, 6), 16),
+              a: 1,
+            };
+          }
+        }
         const match = value.match(/rgba?\\(([^)]+)\\)/i);
         if (!match) return null;
         const parts = match[1].split(',').map(function (part) { return parseFloat(part.trim()); });
@@ -776,6 +789,35 @@ String buildHtmlFragmentDocument({
         const alpha = parts.length >= 4 ? parts[3] : 1;
         if (alpha === 0) return null;
         return { r: parts[0], g: parts[1], b: parts[2], a: alpha };
+      }
+      function parseColorFromCssBackground(value) {
+        if (!value) return null;
+        const text = String(value).trim();
+        if (!text || text === 'transparent' || text === 'none') return null;
+        const direct = parseColor(text);
+        if (direct) return direct;
+        const hex = text.match(/#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})/i);
+        if (hex) return parseColor('#' + hex[1]);
+        const rgb = text.match(/rgba?\\([^)]+\\)/i);
+        if (rgb) return parseColor(rgb[0]);
+        if (/\\bwhite\\b/i.test(text)) return { r: 255, g: 255, b: 255, a: 1 };
+        return null;
+      }
+      function parseInlineBackground(element) {
+        if (!element || !element.getAttribute) return null;
+        const inline = element.getAttribute('style');
+        if (!inline) return null;
+        const rules = inline.split(';');
+        for (let i = 0; i < rules.length; i++) {
+          const rule = rules[i].trim();
+          if (!rule || rule.indexOf(':') < 0) continue;
+          const colon = rule.indexOf(':');
+          const property = rule.slice(0, colon).trim().toLowerCase();
+          if (property !== 'background' && property !== 'background-color') continue;
+          const color = parseColorFromCssBackground(rule.slice(colon + 1).trim());
+          if (color) return color;
+        }
+        return null;
       }
       function luminance(color) {
         function channel(value) {
@@ -794,8 +836,15 @@ String buildHtmlFragmentDocument({
       function effectiveBackground(element) {
         let current = element;
         while (current && current !== document.documentElement) {
-          const color = parseColor(getComputedStyle(current).backgroundColor);
+          const computed = getComputedStyle(current);
+          const inlineBackground = parseInlineBackground(current);
+          if (inlineBackground) return inlineBackground;
+          const color = parseColor(computed.backgroundColor);
           if (color) return color;
+          if (computed.backgroundImage && computed.backgroundImage !== 'none') {
+            const gradientColor = parseColorFromCssBackground(computed.backgroundImage);
+            if (gradientColor) return gradientColor;
+          }
           current = current.parentElement;
         }
         return parseColor('$bg') || { r: 255, g: 255, b: 255, a: 1 };
@@ -806,6 +855,8 @@ String buildHtmlFragmentDocument({
         const white = { r: 255, g: 255, b: 255, a: 1 };
         const nodes = [root].concat(Array.from(root.querySelectorAll('*')));
         nodes.forEach(function (node) {
+          const inlineStyle = node.getAttribute ? (node.getAttribute('style') || '') : '';
+          if (/(?:^|;)\\s*color\\s*:/i.test(inlineStyle)) return;
           const style = getComputedStyle(node);
           const fg = parseColor(style.color);
           if (!fg) return;
